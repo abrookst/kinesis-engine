@@ -7,10 +7,10 @@ project(${my_executable} VERSION 0.1.0 LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 
 #main SRCs
-set(CODE_DIR ${PROJECT_SOURCE_DIR}/src)
-set (SRCS
-  ${CODE_DIR}/main.cpp
-  )
+file(GLOB GAME_SRCS ${PROJECT_SOURCE_DIR}/gamefiles/*.cpp ${PROJECT_SOURCE_DIR}/gamefiles/*.h)
+
+#Kinesis SRCs
+file(GLOB KINESIS_SRCS ${PROJECT_SOURCE_DIR}/kinesis/*.cpp ${PROJECT_SOURCE_DIR}/kinesis/*.h)
 
 #IMGUI SRCs
 set(IMGUI_DIR ${PROJECT_SOURCE_DIR}/lib/imgui)
@@ -28,7 +28,8 @@ set(IMGUI_SRCS
 
 add_executable(${my_executable} 
     MACOSX_BUNDLE
-    ${SRCS}
+    ${GAME_SRCS}
+    ${KINESIS_SRCS}
     ${IMGUI_SRCS}
     )
 

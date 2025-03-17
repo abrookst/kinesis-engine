@@ -39,6 +39,10 @@ find_package(Vulkan REQUIRED)
 include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${my_executable} ${Vulkan_LIBRARIES})
 
+#compile shaders
+add_subdirectory("kinesis/assets/shaders")
+add_dependencies(KinesisEngine Shaders)
+
 CPMAddPackage("gh:glfw/glfw#3.4")
 target_link_libraries(${my_executable} glfw)
 

@@ -47,6 +47,14 @@ namespace Kinesis::GUI
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
+                
+                if (ImGui::BeginMenu("ImGui"))
+                {
+                    ImGui::MenuItem("Show ImGui Demo", "", &show_demo);
+                    ImGui::MenuItem("Dark Mode", "", &dark_mode);
+                    ImGui::EndMenu();
+                }
+                ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
         }
@@ -76,6 +84,10 @@ namespace Kinesis::GUI
         {
             ImGui::End();
             return;
+        }
+        if (ImGui::CollapsingHeader(""))
+        {
+            ImGui::Text("");
         }
     }
 

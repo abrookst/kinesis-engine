@@ -23,9 +23,6 @@
 
 namespace Kinesis
 {
-    namespace Test{
-        static int c = 7;
-    }
     // Data
     static VkAllocationCallbacks *g_Allocator = nullptr;
     static VkInstance g_Instance = VK_NULL_HANDLE;
@@ -43,7 +40,7 @@ namespace Kinesis
 
     //namespace functions
     bool run();
-    void initialize();
+    void initialize(int width = 600, int height = 600);
 }
 
 #endif

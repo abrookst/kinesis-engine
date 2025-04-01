@@ -101,26 +101,11 @@ namespace Kinesis::GUI
         show_gameobject = false;
         show_toolbar = true;
         dark_mode = true;
-        clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
+        clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
     }
 
     void update_imgui()
     {
-        // Resize swap chain?
-        int fb_width, fb_height;
-        glfwGetFramebufferSize(Kinesis::Window::window, &fb_width, &fb_height);
-        if (fb_width > 0 && fb_height > 0 && (g_SwapChainRebuild || g_MainWindowData.Width != fb_width || g_MainWindowData.Height != fb_height))
-        {
-            ImGui_ImplVulkan_SetMinImageCount(g_MinImageCount);
-            ImGui_ImplVulkanH_CreateOrResizeWindow(g_Instance, g_PhysicalDevice, g_Device, &g_MainWindowData, g_QueueFamily, g_Allocator, fb_width, fb_height, g_MinImageCount);
-            g_MainWindowData.FrameIndex = 0;
-            g_SwapChainRebuild = false;
-        }
-        if (glfwGetWindowAttrib(Kinesis::Window::window, GLFW_ICONIFIED) != 0)
-        {
-            ImGui_ImplGlfw_Sleep(10);
-        }
-
         // Start the Dear ImGui frame
         ImGui_ImplVulkan_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -136,18 +121,7 @@ namespace Kinesis::GUI
 
         // Rendering
         ImGui::Render();
-        ImDrawData *draw_data = ImGui::GetDrawData();
-        const bool is_minimized = (draw_data->DisplaySize.x <= 0.0f || draw_data->DisplaySize.y <= 0.0f);
-        if (!is_minimized)
-        {
-            ImGui_ImplVulkanH_Window *imguiwin = Kinesis::Window::wd;
-            imguiwin->ClearValue.color.float32[0] = clear_color.x * clear_color.w;
-            imguiwin->ClearValue.color.float32[1] = clear_color.y * clear_color.w;
-            imguiwin->ClearValue.color.float32[2] = clear_color.z * clear_color.w;
-            imguiwin->ClearValue.color.float32[3] = clear_color.w;
-            Kinesis::Window::FrameRender(imguiwin, draw_data);
-            Kinesis::Window::FramePresent(imguiwin);
-        }
+
     }
 }
 

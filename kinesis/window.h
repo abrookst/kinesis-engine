@@ -11,16 +11,17 @@
 
 namespace Kinesis::Window
 {
-    GLFWwindow* window = nullptr;
+    GLFWwindow *window = nullptr;
     std::unique_ptr<Pipeline> kinesisPipeline = nullptr;
     VkPipelineLayout pipelineLayout;
     std::vector<VkCommandBuffer> commandBuffers;
-    Swapchain* kinesisSwapchain = nullptr;
-    ImGui_ImplVulkanH_Window* wd = nullptr;
+    Swapchain *kinesisSwapchain = nullptr;
+    ImGui_ImplVulkanH_Window *wd = nullptr;
     uint32_t width = 600;
-    uint32_t height = 600; 
+    uint32_t height = 600;
 
-    static void createPipelineLayout(){
+    static void createPipelineLayout()
+    {
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0;
@@ -28,25 +29,28 @@ namespace Kinesis::Window
         pipelineLayoutInfo.pushConstantRangeCount = 0;
         pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-        if(vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS){
+        if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to create pipeline layout");
         }
     }
 
-    static void createPipeline(){
+    static void createPipeline()
+    {
         std::cout << "testA" << std::endl;
-        auto pipelineConfig = Pipeline::defaultPipelineConfigInfo(kinesisSwapchain->width(), kinesisSwapchain->height()); 
+        auto pipelineConfig = Pipeline::defaultPipelineConfigInfo(kinesisSwapchain->width(), kinesisSwapchain->height());
         std::cout << "testB" << std::endl;
         pipelineConfig.renderPass = kinesisSwapchain->getRenderPass();
         pipelineConfig.pipelineLayout = pipelineLayout;
-        
-        kinesisPipeline = std::make_unique<Pipeline>("../../kinesis/assets/shaders/bin/simple_shader.vert.spv", 
-            "../../kinesis/assets/shaders/bin/simple_shader.frag.spv", 
-            pipelineConfig);
-        std::cout << "testC" << std::endl;  
+
+        kinesisPipeline = std::make_unique<Pipeline>("../../kinesis/assets/shaders/bin/simple_shader.vert.spv",
+                                                     "../../kinesis/assets/shaders/bin/simple_shader.frag.spv",
+                                                     pipelineConfig);
+        std::cout << "testC" << std::endl;
     }
 
-    static void createCommandBuffers(){
+    static void createCommandBuffers()
+    {
         commandBuffers.resize(kinesisSwapchain->imageCount());
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -54,16 +58,19 @@ namespace Kinesis::Window
         allocInfo.commandPool = g_MainWindowData.Frames[wd->FrameIndex].CommandPool;
         allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
 
-        if(vkAllocateCommandBuffers(g_Device, &allocInfo, commandBuffers.data()) != VK_SUCCESS){
+        if (vkAllocateCommandBuffers(g_Device, &allocInfo, commandBuffers.data()) != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to allocate command buffers!");
         }
 
-        for(int i = 0; i < commandBuffers.size(); i++){
+        for (int i = 0; i < commandBuffers.size(); i++)
+        {
             VkCommandBufferBeginInfo beginInfo{};
-            beginInfo.sType =  VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-            if(vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS){
-                throw std::runtime_error("failed to start recording buffer #"+i);
+            if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS)
+            {
+                throw std::runtime_error("failed to start recording buffer #" + i);
             }
 
             VkRenderPassBeginInfo renderPassInfo{};
@@ -71,37 +78,43 @@ namespace Kinesis::Window
             renderPassInfo.renderPass = kinesisSwapchain->getRenderPass();
             renderPassInfo.framebuffer = kinesisSwapchain->getFrameBuffer(i);
 
-            renderPassInfo.renderArea.offset = {0,0};
+            renderPassInfo.renderArea.offset = {0, 0};
             renderPassInfo.renderArea.extent = kinesisSwapchain->getSwapChainExtent();
 
             std::array<VkClearValue, 2> clearValues{};
-            clearValues[0].color = {0.1f,0.1f,0.1f,1.0f};
+            clearValues[0].color = {0.1f, 0.1f, 0.1f, 1.0f};
             clearValues[1].depthStencil = {1.0f, 0};
             renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
             renderPassInfo.pClearValues = clearValues.data();
 
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
             kinesisPipeline->bind(commandBuffers[i]);
-            vkCmdDraw(commandBuffers[i],3,1,0,0);
+            vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+            ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffers[i]);
             vkCmdEndRenderPass(commandBuffers[i]);
-            if(vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS){
+            if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
+            {
                 throw std::runtime_error("failed to record command buffer!");
             }
         }
     }
 
-    static void drawFrame(){
+    static void drawFrame()
+    {
+        createCommandBuffers();
         uint32_t imageIndex;
         auto result = kinesisSwapchain->acquireNextImage(&imageIndex);
-        if(result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR){
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        {
             throw std::runtime_error("failed to aquire swapchain image!");
         }
         result = kinesisSwapchain->submitCommandBuffers(&commandBuffers[imageIndex], &imageIndex);
-        if(result != VK_SUCCESS){
+        if (result != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to present swapchain image!");
         }
     }
-     
+
     static void glfw_error_callback(int error, const char *description)
     {
         fprintf(stderr, "GLFW Error %d: %s\n", error, description);
@@ -313,107 +326,24 @@ namespace Kinesis::Window
         ImGui_ImplVulkanH_DestroyWindow(g_Instance, g_Device, &g_MainWindowData, g_Allocator);
     }
 
-    static void FrameRender(ImGui_ImplVulkanH_Window *wd, ImDrawData *draw_data)
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties)
     {
-        VkSemaphore image_acquired_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].ImageAcquiredSemaphore;
-        VkSemaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-        VkResult err = vkAcquireNextImageKHR(g_Device, wd->Swapchain, UINT64_MAX, image_acquired_semaphore, VK_NULL_HANDLE, &wd->FrameIndex);
-        if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR)
-            g_SwapChainRebuild = true;
-        if (err == VK_ERROR_OUT_OF_DATE_KHR)
-            return;
-        if (err != VK_SUBOPTIMAL_KHR)
-            check_vk_result(err);
-
-        ImGui_ImplVulkanH_Frame *fd = &wd->Frames[wd->FrameIndex];
-        {
-            err = vkWaitForFences(g_Device, 1, &fd->Fence, VK_TRUE, UINT64_MAX); // wait indefinitely instead of periodically checking
-            check_vk_result(err);
-
-            err = vkResetFences(g_Device, 1, &fd->Fence);
-            check_vk_result(err);
-        }
-        {
-            err = vkResetCommandPool(g_Device, fd->CommandPool, 0);
-            check_vk_result(err);
-            VkCommandBufferBeginInfo info = {};
-            info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-            info.flags |= VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-            err = vkBeginCommandBuffer(fd->CommandBuffer, &info);
-            check_vk_result(err);
-        }
-        {
-            VkRenderPassBeginInfo info = {};
-            info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            info.renderPass = wd->RenderPass;
-            info.framebuffer = fd->Framebuffer;
-            info.renderArea.extent.width = wd->Width;
-            info.renderArea.extent.height = wd->Height;
-            info.clearValueCount = 1;
-            info.pClearValues = &wd->ClearValue;
-            vkCmdBeginRenderPass(fd->CommandBuffer, &info, VK_SUBPASS_CONTENTS_INLINE);
-        }
-
-        // Record dear imgui primitives into command buffer
-        ImGui_ImplVulkan_RenderDrawData(draw_data, fd->CommandBuffer);
-
-        // Submit command buffer
-        vkCmdEndRenderPass(fd->CommandBuffer);
-        {
-            VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-            VkSubmitInfo info = {};
-            info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            info.waitSemaphoreCount = 1;
-            info.pWaitSemaphores = &image_acquired_semaphore;
-            info.pWaitDstStageMask = &wait_stage;
-            info.commandBufferCount = 1;
-            info.pCommandBuffers = &fd->CommandBuffer;
-            info.signalSemaphoreCount = 1;
-            info.pSignalSemaphores = &render_complete_semaphore;
-
-            err = vkEndCommandBuffer(fd->CommandBuffer);
-            check_vk_result(err);
-            err = vkQueueSubmit(g_Queue, 1, &info, fd->Fence);
-            check_vk_result(err);
-        }
-    }
-
-    static void FramePresent(ImGui_ImplVulkanH_Window *wd)
-    {
-        if (g_SwapChainRebuild)
-            return;
-        VkSemaphore render_complete_semaphore = wd->FrameSemaphores[wd->SemaphoreIndex].RenderCompleteSemaphore;
-        VkPresentInfoKHR info = {};
-        info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-        info.waitSemaphoreCount = 1;
-        info.pWaitSemaphores = &render_complete_semaphore;
-        info.swapchainCount = 1;
-        info.pSwapchains = &wd->Swapchain;
-        info.pImageIndices = &wd->FrameIndex;
-        VkResult err = vkQueuePresentKHR(g_Queue, &info);
-        if (err == VK_ERROR_OUT_OF_DATE_KHR || err == VK_SUBOPTIMAL_KHR)
-            g_SwapChainRebuild = true;
-        if (err == VK_ERROR_OUT_OF_DATE_KHR)
-            return;
-        if (err != VK_SUBOPTIMAL_KHR)
-            check_vk_result(err);
-        wd->SemaphoreIndex = (wd->SemaphoreIndex + 1) % wd->SemaphoreCount; // Now we can use the next set of semaphores
-    }
-
-    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(g_PhysicalDevice, &memProperties);
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-          if ((typeFilter & (1 << i)) &&
-              (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-          }
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if ((typeFilter & (1 << i)) &&
+                (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
         }
-      
-        throw std::runtime_error("failed to find suitable memory type!");
-      }
 
-      VkExtent2D getExtent(){
+        throw std::runtime_error("failed to find suitable memory type!");
+    }
+
+    VkExtent2D getExtent()
+    {
         return {width, height};
     }
 
@@ -459,11 +389,8 @@ namespace Kinesis::Window
         std::cout << "test2" << std::endl;
         createPipeline();
         std::cout << "test3" << std::endl;
-        createCommandBuffers();
         std::cout << "test4" << std::endl;
-        
 
-        
         // Setup Dear ImGui context
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
@@ -482,10 +409,10 @@ namespace Kinesis::Window
         init_info.Queue = g_Queue;
         init_info.PipelineCache = g_PipelineCache;
         init_info.DescriptorPool = g_DescriptorPool;
-        init_info.RenderPass = wd->RenderPass;
+        init_info.RenderPass = kinesisSwapchain->getRenderPass();
         init_info.Subpass = 0;
         init_info.MinImageCount = g_MinImageCount;
-        init_info.ImageCount = wd->ImageCount;
+        init_info.ImageCount = static_cast<uint32_t>(kinesisSwapchain->imageCount());
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = g_Allocator;
         init_info.CheckVkResultFn = Window::check_vk_result;
@@ -493,7 +420,8 @@ namespace Kinesis::Window
         return 0;
     }
 
-    static void cleanup(){
+    static void cleanup()
+    {
         vkDestroyPipelineLayout(g_Device, pipelineLayout, nullptr);
 
         VkResult err = vkDeviceWaitIdle(g_Device);

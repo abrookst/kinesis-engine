@@ -12,10 +12,8 @@
 namespace Kinesis::Window
 {
     GLFWwindow *window = nullptr;
-    std::unique_ptr<Pipeline> kinesisPipeline = nullptr;
     VkPipelineLayout pipelineLayout;
     std::vector<VkCommandBuffer> commandBuffers;
-    Swapchain *kinesisSwapchain = nullptr;
     ImGui_ImplVulkanH_Window *wd = nullptr;
     uint32_t width = 600;
     uint32_t height = 600;
@@ -38,20 +36,20 @@ namespace Kinesis::Window
     static void createPipeline()
     {
         std::cout << "testA" << std::endl;
-        auto pipelineConfig = Pipeline::defaultPipelineConfigInfo(kinesisSwapchain->width(), kinesisSwapchain->height());
+        auto pipelineConfig = Kinesis::Pipeline::defaultConfigInfo(Kinesis::Swapchain::width(), Kinesis::Swapchain::height());
         std::cout << "testB" << std::endl;
-        pipelineConfig.renderPass = kinesisSwapchain->getRenderPass();
+        pipelineConfig.renderPass = Kinesis::Swapchain::getRenderPass();
         pipelineConfig.pipelineLayout = pipelineLayout;
 
-        kinesisPipeline = std::make_unique<Pipeline>("../../kinesis/assets/shaders/bin/simple_shader.vert.spv",
-                                                     "../../kinesis/assets/shaders/bin/simple_shader.frag.spv",
-                                                     pipelineConfig);
+        Kinesis::Pipeline::initialize("../../kinesis/assets/shaders/bin/simple_shader.vert.spv",
+            "../../kinesis/assets/shaders/bin/simple_shader.frag.spv",
+            pipelineConfig);
         std::cout << "testC" << std::endl;
     }
 
     static void createCommandBuffers()
     {
-        commandBuffers.resize(kinesisSwapchain->imageCount());
+        commandBuffers.resize(Kinesis::Swapchain::imageCount());
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -75,11 +73,11 @@ namespace Kinesis::Window
 
             VkRenderPassBeginInfo renderPassInfo{};
             renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-            renderPassInfo.renderPass = kinesisSwapchain->getRenderPass();
-            renderPassInfo.framebuffer = kinesisSwapchain->getFrameBuffer(i);
+            renderPassInfo.renderPass = Kinesis::Swapchain::getRenderPass();
+            renderPassInfo.framebuffer = Kinesis::Swapchain::getFrameBuffer(i);
 
             renderPassInfo.renderArea.offset = {0, 0};
-            renderPassInfo.renderArea.extent = kinesisSwapchain->getSwapChainExtent();
+            renderPassInfo.renderArea.extent = Kinesis::Swapchain::getSwapChainExtent();
 
             std::array<VkClearValue, 2> clearValues{};
             clearValues[0].color = {0.1f, 0.1f, 0.1f, 1.0f};
@@ -88,7 +86,7 @@ namespace Kinesis::Window
             renderPassInfo.pClearValues = clearValues.data();
 
             vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-            kinesisPipeline->bind(commandBuffers[i]);
+            Kinesis::Pipeline::bind(commandBuffers[i]);
             vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
             ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffers[i]);
             vkCmdEndRenderPass(commandBuffers[i]);
@@ -103,12 +101,12 @@ namespace Kinesis::Window
     {
         createCommandBuffers();
         uint32_t imageIndex;
-        auto result = kinesisSwapchain->acquireNextImage(&imageIndex);
+        auto result = Kinesis::Swapchain::acquireNextImage(&imageIndex);
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         {
             throw std::runtime_error("failed to aquire swapchain image!");
         }
-        result = kinesisSwapchain->submitCommandBuffers(&commandBuffers[imageIndex], &imageIndex);
+        result = Kinesis::Swapchain::submitCommandBuffers(&commandBuffers[imageIndex], &imageIndex);
         if (result != VK_SUCCESS)
         {
             throw std::runtime_error("failed to present swapchain image!");
@@ -383,7 +381,7 @@ namespace Kinesis::Window
         SetupVulkanWindow(wd, surface, w, h);
 
         // Initialize the pipeline AFTER Vulkan is set up
-        kinesisSwapchain = new Swapchain(getExtent());
+        Kinesis::Swapchain::initialize(getExtent());
         std::cout << "test1" << std::endl;
         createPipelineLayout();
         std::cout << "test2" << std::endl;
@@ -409,10 +407,10 @@ namespace Kinesis::Window
         init_info.Queue = g_Queue;
         init_info.PipelineCache = g_PipelineCache;
         init_info.DescriptorPool = g_DescriptorPool;
-        init_info.RenderPass = kinesisSwapchain->getRenderPass();
+        init_info.RenderPass = Kinesis::Swapchain::getRenderPass();
         init_info.Subpass = 0;
         init_info.MinImageCount = g_MinImageCount;
-        init_info.ImageCount = static_cast<uint32_t>(kinesisSwapchain->imageCount());
+        init_info.ImageCount = static_cast<uint32_t>(Kinesis::Swapchain::imageCount());
         init_info.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
         init_info.Allocator = g_Allocator;
         init_info.CheckVkResultFn = Window::check_vk_result;
@@ -423,6 +421,9 @@ namespace Kinesis::Window
     static void cleanup()
     {
         vkDestroyPipelineLayout(g_Device, pipelineLayout, nullptr);
+
+        Kinesis::Pipeline::cleanup();
+        Kinesis::Swapchain::cleanup();
 
         VkResult err = vkDeviceWaitIdle(g_Device);
         check_vk_result(err);

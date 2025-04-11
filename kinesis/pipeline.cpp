@@ -1,4 +1,6 @@
 #include "pipeline.h"
+#include "model.h"
+
 #include <fstream>
 #include <stdexcept>
 #include <cassert>
@@ -50,12 +52,14 @@ namespace Kinesis::Pipeline
         shaderStages[1].pNext = nullptr;
         shaderStages[1].pSpecializationInfo = nullptr;
 
+        auto bindingDescriptions = Kinesis::Model::Vertex::getBindingDescriptions();
+        auto attributeDescriptions = Kinesis::Model::Vertex::getAttributeDescriptions();
         VkPipelineVertexInputStateCreateInfo vertInputInfo{};
         vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertInputInfo.vertexAttributeDescriptionCount = 0;
-        vertInputInfo.vertexBindingDescriptionCount = 0;
-        vertInputInfo.pVertexAttributeDescriptions = nullptr;
-        vertInputInfo.pVertexBindingDescriptions = nullptr;
+        vertInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+        vertInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindingDescriptions.size());
+        vertInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+        vertInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
 
         VkPipelineViewportStateCreateInfo viewportInfo{};
         viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;

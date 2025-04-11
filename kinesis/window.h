@@ -20,11 +20,23 @@ namespace Kinesis::Window
     extern ImGui_ImplVulkanH_Window *wd;
     extern uint32_t width;
     extern uint32_t height;
+    extern bool fbResized;
 
     /**
      * @brief Creates the Vulkan pipeline layout.
      */
     void createPipelineLayout();
+
+    /**
+     * @brief Rerenders the swapchain given a window resizing.
+     */
+    void recreateSwapchain();
+
+    /**
+     * @brief records the current command buffer
+     * @param i the image index you wish to record.
+     */
+    void recordCommandBuffer(int i);
 
     /**
      * @brief Creates the graphics pipeline.
@@ -135,6 +147,11 @@ namespace Kinesis::Window
      * @brief Loads the vertexbuffer into the model
      */
     void loadModels();
+
+    /**
+     * Handles wdjonkllllll
+     */
+    void fbResizeCallback(GLFWwindow* window, uint32_t width, uint32_t height);
 
     /**
      * @brief Initializes the GLFW window and sets up the Vulkan context, swapchain, pipeline, and ImGui.

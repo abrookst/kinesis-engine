@@ -30,7 +30,7 @@ namespace Kinesis {
     bool run()
     {
         // Main loop
-        //TODO: add init check
+        //TODO: add check to see if end user ran init before run, give a clear error message instead of throwing some vulkan errors. low priority cuz im the only one using this
         if(glfwWindowShouldClose(Kinesis::Window::window)){
             vkDeviceWaitIdle(g_Device);
             Kinesis::Window::cleanup();

@@ -442,7 +442,7 @@ namespace Kinesis::Swapchain
         VkSurfaceFormatKHR chooseSwapSurfaceFormat(
             const std::vector<VkSurfaceFormatKHR> &availableFormats){
                 for (const auto &availableFormat : availableFormats) {
-                    if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM &&
+                    if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
                         availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                       return availableFormat; // Prefer BGRA8 sRGB non-linear
                     }
@@ -456,6 +456,7 @@ namespace Kinesis::Swapchain
 
         VkPresentModeKHR chooseSwapPresentMode(
             const std::vector<VkPresentModeKHR> &availablePresentModes){
+                //TODO: mayhap a little IMGUI doggle for vsync ? 
                 for (const auto &availablePresentMode : availablePresentModes) {
                     if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
                       std::cout << "Present mode: Mailbox" << std::endl;

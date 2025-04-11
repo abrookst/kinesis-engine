@@ -8,6 +8,7 @@ namespace Kinesis::Window
     ImGui_ImplVulkanH_Window *wd = nullptr;
     uint32_t width = 600;
     uint32_t height = 600;
+    bool fbResized = false;
 
     void createPipelineLayout()
     {
@@ -52,9 +53,23 @@ namespace Kinesis::Window
             throw std::runtime_error("failed to allocate command buffers!");
         }
 
-        for (int i = 0; i < commandBuffers.size(); i++)
-        {
-            VkCommandBufferBeginInfo beginInfo{};
+        
+    }
+
+    void recreateSwapchain(){
+        VkExtent2D extent = getExtent();
+        while(extent.width == 0 || extent.height == 0){
+            extent = getExtent();
+            glfwWaitEvents();
+        }
+
+        vkDeviceWaitIdle(g_Device);
+        Kinesis::Swapchain::initialize(extent);
+        createPipeline();
+    }
+
+    void recordCommandBuffer(int i){
+        VkCommandBufferBeginInfo beginInfo{};
             beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
             if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS)
@@ -86,7 +101,6 @@ namespace Kinesis::Window
             {
                 throw std::runtime_error("failed to record command buffer!");
             }
-        }
     }
 
     void drawFrame()
@@ -94,11 +108,22 @@ namespace Kinesis::Window
         createCommandBuffers();
         uint32_t imageIndex;
         auto result = Kinesis::Swapchain::acquireNextImage(&imageIndex);
+
+        if(result == VK_ERROR_OUT_OF_DATE_KHR){
+            recreateSwapchain();
+            return;
+        }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         {
             throw std::runtime_error("failed to aquire swapchain image!");
         }
+        recordCommandBuffer(imageIndex);
         result = Kinesis::Swapchain::submitCommandBuffers(&commandBuffers[imageIndex], &imageIndex);
+        if(result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || fbResized){
+            fbResized = false;
+            recreateSwapchain();
+            return;
+        }
         if (result != VK_SUCCESS)
         {
             throw std::runtime_error("failed to present swapchain image!");
@@ -360,6 +385,12 @@ namespace Kinesis::Window
         Kinesis::Model::initialize(vertices);
     }
 
+    void fbResizeCallback(GLFWwindow* window, int n_width, int n_height){
+        fbResized = true;
+        width = static_cast<uint32_t>(n_width);
+        height = static_cast<uint32_t>(n_height);
+    }
+
     int initialize(int Swidth, int Sheight) {
         width = Swidth;
         height = Sheight;
@@ -369,12 +400,17 @@ namespace Kinesis::Window
 
         // Create window with Vulkan context
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
         window = glfwCreateWindow(width, height, "Dear ImGui GLFW+Vulkan example", nullptr, nullptr);
         if (!glfwVulkanSupported())
         {
             printf("GLFW: Vulkan Not Supported\n");
             return 1;
         }
+
+        glfwSetWindowUserPointer(window, nullptr);
+        glfwSetFramebufferSizeCallback(window, fbResizeCallback);
+
 
         ImVector<const char *> extensions;
         uint32_t extensions_count = 0;
@@ -402,7 +438,7 @@ namespace Kinesis::Window
         std::cout << "test1" << std::endl;
         createPipelineLayout();
         std::cout << "test2" << std::endl;
-        createPipeline();
+        recreateSwapchain();
         std::cout << "test3" << std::endl;
         std::cout << "test4" << std::endl;
 

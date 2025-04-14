@@ -2,8 +2,8 @@
 #define __TRANSFORM_H__
 
 #include <string>
-#include "kinesis/math/vectors.h"
-#include "kinesis/math/quaternion.h"
+#include "math/vectors.h"
+#include "math/quaternion.h"
 
 class GameObject;
 

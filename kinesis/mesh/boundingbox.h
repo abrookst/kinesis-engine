@@ -1,7 +1,7 @@
 #ifndef __BOUNDINGBOX_H__
 #define __BOUNDINGBOX_H__
 
-#include "kinesis/math/vectors.h"
+#include "math/vectors.h"
 
 class BoundingBox
 {

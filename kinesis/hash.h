@@ -17,7 +17,7 @@
 
 class Edge;
 class Triangle;
-#include "vertex.h"
+#include "mesh/vertex.h"
 
 #define LARGE_PRIME_A 10007
 #define LARGE_PRIME_B 11003

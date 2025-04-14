@@ -2,7 +2,7 @@
 #define __GAMEOBJECT_H__
 
 #include <string>
-#include "kinesis/transform.h"
+#include "transform.h"
 
 class GameObject {
 public:

@@ -9,7 +9,7 @@
 #include <cmath>
 #include <cassert>
 
-#include "kinesis/math/math.h"
+#include "math/math.h"
 
 class Matrix;
 

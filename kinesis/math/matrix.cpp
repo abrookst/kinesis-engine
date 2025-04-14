@@ -5,8 +5,7 @@
 #include <iostream>
 #include <iomanip>
 
-#include "matrix.h"
-#include "vectors.h"
+#include "math/matrix.h"
 
 // ===================================================================
 // ===================================================================

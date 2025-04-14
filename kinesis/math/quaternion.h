@@ -4,8 +4,8 @@
 #include <iostream>
 #include <cmath>
 #include <cassert>
-#include "kinesis/math/vectors.h"
-#include "kinesis/math/math.h"
+#include "math/vectors.h"
+#include "math/math.h"
 
 class Quaternion
 {

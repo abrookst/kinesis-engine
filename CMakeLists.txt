@@ -11,6 +11,7 @@ file(GLOB GAME_SRCS ${PROJECT_SOURCE_DIR}/gamefiles/*.cpp ${PROJECT_SOURCE_DIR}/
 
 #Kinesis SRCs
 file(GLOB KINESIS_SRCS ${PROJECT_SOURCE_DIR}/kinesis/*.cpp ${PROJECT_SOURCE_DIR}/kinesis/*.h)
+include_directories(${PROJECT_SOURCE_DIR}/kinesis/)
 
 #IMGUI SRCs
 set(IMGUI_DIR ${PROJECT_SOURCE_DIR}/lib/imgui)

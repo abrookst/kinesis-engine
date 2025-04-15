@@ -11,14 +11,14 @@ class Transform {
 public:
     // -----------------------------------------------
     // CONSTRUCTORS, ASSIGNMENT OPERATOR, & DESTRUCTOR
-    Transform() : position(Vector3::Zero()),rotation(Quaternion::Identity()),scale(Vector3::One()),gameObject(nullptr) {}
-    Transform(const Transform &T) {
+    Transform(GameObject* gameObj = nullptr) : position(Vector3::Zero()),rotation(Quaternion::Identity()),scale(Vector3::One()),gameObject(gameObj) {}
+    Transform(const Transform &T, GameObject* gameObj = nullptr) {
         position = T.position;
         rotation = T.rotation;
         scale = T.scale;
-        gameObject = nullptr;
+        gameObject = gameObj;
     }
-    Transform(const Vector3 &pos, const Quaternion &rot, const Vector3 &sc) : position(pos),rotation(rot),scale(sc),gameObject(nullptr) {}
+    Transform(const Vector3 &pos, const Quaternion &rot, const Vector3 &sc, GameObject* gameObj = nullptr) : position(pos),rotation(rot),scale(sc),gameObject(gameObj) {}
     const Transform &operator=(const Transform &T) {
         position = T.position;
         rotation = T.rotation;

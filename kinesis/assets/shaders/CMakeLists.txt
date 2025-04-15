@@ -18,7 +18,7 @@ if (NOT GLSLANGVALIDATOR)
     message(FATAL_ERROR "glslangValidator not found at ${GLSLANGVALIDATOR}")
 endif ()
 
-set(SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+set(SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/kinesis/assets/shaders/")
 
 file(GLOB_RECURSE SHADERS CONFIGURE_DEPENDS
         ${SHADER_DIR}/*.frag
@@ -32,8 +32,8 @@ file(GLOB_RECURSE SHADERS CONFIGURE_DEPENDS
 file(GLOB_RECURSE GLSL_SHADERS CONFIGURE_DEPENDS
         ${SHADER_DIR}/*.glsl
 )
-
-set(SPIRV_BIN "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+message(${SHADER_DIR})
+set(SPIRV_BIN "${SHADER_DIR}/bin")
 file(MAKE_DIRECTORY ${SPIRV_BIN})
 
 function(compile_shader shader)

@@ -23,27 +23,24 @@
 
 namespace Kinesis
 {
-    namespace Test{
-        static int c = 7;
-    }
     // Data
-    static VkAllocationCallbacks *g_Allocator = nullptr;
-    static VkInstance g_Instance = VK_NULL_HANDLE;
-    static VkPhysicalDevice g_PhysicalDevice = VK_NULL_HANDLE;
-    static VkDevice g_Device = VK_NULL_HANDLE;
-    static uint32_t g_QueueFamily = (uint32_t)-1;
-    static VkQueue g_Queue = VK_NULL_HANDLE;
-    static VkDebugReportCallbackEXT g_DebugReport = VK_NULL_HANDLE;
-    static VkPipelineCache g_PipelineCache = VK_NULL_HANDLE;
-    static VkDescriptorPool g_DescriptorPool = VK_NULL_HANDLE;
+    extern VkAllocationCallbacks *g_Allocator;
+    extern VkInstance g_Instance;
+    extern VkPhysicalDevice g_PhysicalDevice;
+    extern VkDevice g_Device;
+    extern uint32_t g_QueueFamily;
+    extern VkQueue g_Queue;
+    extern VkDebugReportCallbackEXT g_DebugReport;
+    extern VkPipelineCache g_PipelineCache;
+    extern VkDescriptorPool g_DescriptorPool;
 
-    static ImGui_ImplVulkanH_Window g_MainWindowData;
-    static uint32_t g_MinImageCount = 2;
-    static bool g_SwapChainRebuild = false;
+    extern ImGui_ImplVulkanH_Window g_MainWindowData;
+    extern uint32_t g_MinImageCount;
+    extern bool g_SwapChainRebuild;
 
     //namespace functions
     bool run();
-    void initialize();
+    void initialize(int width = 600, int height = 600);
 }
 
 #endif

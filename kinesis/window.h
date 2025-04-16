@@ -15,43 +15,10 @@
 namespace Kinesis::Window
 {
     extern GLFWwindow *window;
-    extern VkPipelineLayout pipelineLayout;
-    extern std::vector<VkCommandBuffer> commandBuffers;
     extern ImGui_ImplVulkanH_Window *wd;
     extern uint32_t width;
     extern uint32_t height;
     extern bool fbResized;
-
-    /**
-     * @brief Creates the Vulkan pipeline layout.
-     */
-    void createPipelineLayout();
-
-    /**
-     * @brief Rerenders the swapchain given a window resizing.
-     */
-    void recreateSwapchain();
-
-    /**
-     * @brief records the current command buffer
-     * @param i the image index you wish to record.
-     */
-    void recordCommandBuffer(int i);
-
-    /**
-     * @brief Creates the graphics pipeline.
-     */
-    void createPipeline();
-
-    /**
-     * @brief Creates and records command buffers for rendering.
-     */
-    void createCommandBuffers();
-
-    /**
-     * @brief Acquires the next swapchain image, submits command buffers, and presents the frame.
-     */
-    void drawFrame();
 
     /**
      * @brief GLFW error callback function.
@@ -137,16 +104,7 @@ namespace Kinesis::Window
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
 
-    /**
-     * @brief Gets the current extent (width and height) of the window.
-     * @return VkExtent2D containing the width and height.
-     */
-    VkExtent2D getExtent();
-
-    /**
-     * @brief Loads the vertexbuffer into the model
-     */
-    void loadModels();
+    
 
     /**
      * Handles wdjonkllllll

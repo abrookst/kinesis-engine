@@ -2,8 +2,7 @@
 #define __TRANSFORM_H__
 
 #include <string>
-#include "math/vectors.h"
-#include "math/quaternion.h"
+#include <glm/glm.hpp>
 
 class GameObject;
 
@@ -11,14 +10,14 @@ class Transform {
 public:
     // -----------------------------------------------
     // CONSTRUCTORS, ASSIGNMENT OPERATOR, & DESTRUCTOR
-    Transform(GameObject* gameObj = nullptr) : position(Vector3::Zero()),rotation(Quaternion::Identity()),scale(Vector3::One()),gameObject(gameObj) {}
+    Transform(GameObject* gameObj = nullptr) : position(glm::vec3()),rotation(0),scale(glm::vec3(1)),gameObject(gameObj) {}
     Transform(const Transform &T, GameObject* gameObj = nullptr) {
         position = T.position;
         rotation = T.rotation;
         scale = T.scale;
         gameObject = gameObj;
     }
-    Transform(const Vector3 &pos, const Quaternion &rot, const Vector3 &sc, GameObject* gameObj = nullptr) : position(pos),rotation(rot),scale(sc),gameObject(gameObj) {}
+    Transform(const glm::vec3 &pos, const float &rot, const glm::vec3 &sc, GameObject* gameObj = nullptr) : position(pos),rotation(rot),scale(sc),gameObject(gameObj) {}
     const Transform &operator=(const Transform &T) {
         position = T.position;
         rotation = T.rotation;
@@ -29,20 +28,30 @@ public:
     
     // ----------------------------
     // SIMPLE ACCESSORS & MODIFIERS
-    Vector3 Position() const { return position; }
-    Quaternion Rotation() const { return rotation; }
-    Vector3 Scale() const { return scale; }
+    glm::vec3 Position() const { return position; }
+    float Rotation() const { return rotation; }
+    glm::vec3 Scale() const { return scale; }
 
-    void SetPosition(const Vector3 &V) { position = V; }
-    void Translate(const Vector3 &V) { position += V; }
-    void SetRotation(const Quaternion &Q) { rotation = Q; }
-    void Rotate(const Quaternion &Q) { rotation *= Q; }
-    void SetScale(const Vector3 &V) { scale = V; }
-    void ModifyScale(const Vector3 &V) { scale = scale * V; }
+    void SetPosition(const glm::vec3 &V) { position = V; }
+    void Translate(const glm::vec3 &V) { position += V; }
+    void SetRotation(const float &R) { rotation = R; }
+    void Rotate(const float &R) { rotation *= R; }
+    void SetScale(const glm::vec3 &V) { scale = V; }
+    void ModifyScale(const glm::vec3 &V) { scale = scale * V; }
+
+    glm::mat2 mat2(){
+        const float rot_sin = glm::sin(rotation);
+        const float rot_cos = glm::cos(rotation);
+
+        glm::mat2 rotMTX{{rot_cos, rot_sin}, {-rot_sin, rot_cos}};
+        glm::mat2 scalMTX{{scale.x, 0}, {0,scale.y}};
+        return rotMTX * scalMTX;
+    }
+    
 private:
-    Vector3 position;
-    Quaternion rotation;
-    Vector3 scale;
+    glm::vec3 position;
+    float rotation;
+    glm::vec3 scale;
     GameObject *gameObject;
 };
 

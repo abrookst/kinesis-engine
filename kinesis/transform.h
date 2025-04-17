@@ -5,7 +5,6 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-class GameObject;
 
 class Transform {
 public:
@@ -47,4 +46,18 @@ private:
     GameObject *gameObject;
 };
 
+			void SetPosition(const Math::Vector3 &V) { position = V; }
+			void Translate(const Math::Vector3 &V) { position += V; }
+			void SetRotation(const Math::Quaternion &Q) { rotation = Q; }
+			void Rotate(const Math::Quaternion &Q) { rotation *= Q; }
+			void SetScale(const Math::Vector3 &V) { scale = V; }
+			void ModifyScale(const Math::Vector3 &V) { scale = scale * V; }
+		private:
+			Math::Vector3 position;
+			Math::Quaternion rotation;
+			Math::Vector3 scale;
+			GameObject *gameObject;
+	};
+
+}
 #endif // __TRANSFORM_H__

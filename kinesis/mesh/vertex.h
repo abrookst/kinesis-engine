@@ -5,8 +5,9 @@
 
 // ==========================================================
 
-class Vertex {
-	public:
+namespace Kinesis::Mesh {
+	class Vertex {
+		public:
 
 		// ========================
 		// CONSTRUCTOR & DESTRUCTOR
@@ -41,6 +42,7 @@ class Vertex {
 		}
 };
 
+}
 // ==========================================================
 
 #endif // __VERTEX_H__

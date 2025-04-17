@@ -3,11 +3,13 @@
 
 #include <string>
 
-class Material {
-public:
+namespace Kinesis::Mesh {
+	class Material {
+		public:
 
-private:
-    
-};
+		private:
+
+	};
+}
 
 #endif // __MATERIAL_H__

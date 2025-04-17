@@ -107,58 +107,58 @@ namespace Kinesis {
     }
 
     std::unique_ptr<Model> createCubeModel(glm::vec3 offset) {
-        std::vector<Vertex> vertices{
+        std::vector<Mesh::Vertex> vertices{
        
             // left face (white) - Indices 0 to 5
-            Vertex(0, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}),
-            Vertex(1, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}),
-            Vertex(2, {-.5f, -.5f,  .5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(0, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(1, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(2, {-.5f, -.5f,  .5f}, {.9f, .9f, .9f}),
             // Note: Original vertices list seemed to have duplicates, ensure correct vertices for a cube.
             // Assuming unique vertices per face corner for simplicity here. Adjust if needed.
             // Re-using vertex 0, 1, 2 for the second triangle of the left face
-            Vertex(3, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}), // Same as 0
-            Vertex(4, {-.5f,  .5f, -.5f}, {.9f, .9f, .9f}),
-            Vertex(5, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}), // Same as 1
+            Mesh::Vertex(3, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}), // Same as 0
+            Mesh::Vertex(4, {-.5f,  .5f, -.5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(5, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}), // Same as 1
 
             // right face (yellow) - Indices 6 to 11
-            Vertex(6, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}),
-            Vertex(7, {.5f,  .5f,  .5f}, {.8f, .8f, .1f}),
-            Vertex(8, {.5f, -.5f,  .5f}, {.8f, .8f, .1f}),
-            Vertex(9, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}), // Same as 6
-            Vertex(10,{ .5f,  .5f, -.5f}, {.8f, .8f, .1f}),
-            Vertex(11,{ .5f,  .5f,  .5f}, {.8f, .8f, .1f}), // Same as 7
+            Mesh::Vertex(6, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(7, {.5f,  .5f,  .5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(8, {.5f, -.5f,  .5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(9, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}), // Same as 6
+            Mesh::Vertex(10,{ .5f,  .5f, -.5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(11,{ .5f,  .5f,  .5f}, {.8f, .8f, .1f}), // Same as 7
 
             // top face (orange, y points down) - Indices 12 to 17
-            Vertex(12,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}),
-            Vertex(13,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}),
-            Vertex(14,{-.5f, -.5f,  .5f}, {.9f, .6f, .1f}),
-            Vertex(15,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}), // Same as 12
-            Vertex(16,{ .5f, -.5f, -.5f}, {.9f, .6f, .1f}),
-            Vertex(17,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}), // Same as 13
+            Mesh::Vertex(12,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(13,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(14,{-.5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(15,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}), // Same as 12
+            Mesh::Vertex(16,{ .5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(17,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}), // Same as 13
 
             // bottom face (red) - Indices 18 to 23
-            Vertex(18,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}),
-            Vertex(19,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}),
-            Vertex(20,{-.5f,  .5f,  .5f}, {.8f, .1f, .1f}),
-            Vertex(21,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}), // Same as 18
-            Vertex(22,{ .5f,  .5f, -.5f}, {.8f, .1f, .1f}),
-            Vertex(23,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}), // Same as 19
+            Mesh::Vertex(18,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(19,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(20,{-.5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(21,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}), // Same as 18
+            Mesh::Vertex(22,{ .5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(23,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}), // Same as 19
 
             // nose face (blue) - Indices 24 to 29
-            Vertex(24,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
-            Vertex(25,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
-            Vertex(26,{-.5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
-            Vertex(27,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}), // Same as 24
-            Vertex(28,{ .5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
-            Vertex(29,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}), // Same as 25
+            Mesh::Vertex(24,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(25,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(26,{-.5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(27,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}), // Same as 24
+            Mesh::Vertex(28,{ .5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(29,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}), // Same as 25
 
             // tail face (green) - Indices 30 to 35
-            Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
-            Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
-            Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
-            Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
-            Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
-            Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
+            Mesh::Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
+            Mesh::Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
         };
         for (auto& v : vertices) {
           v.position += offset;

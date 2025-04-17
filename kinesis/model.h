@@ -18,7 +18,7 @@ namespace Kinesis
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory; // Use extern
         uint32_t vertexCount; 
-        void createVertexBuffers(const std::vector<Vertex> &vertices);
+        void createVertexBuffers(const std::vector<Mesh::Vertex> &vertices);
 
 
     public:
@@ -39,7 +39,7 @@ namespace Kinesis
          * (Currently just calls createVertexBuffers).
          * @param vertices The vertex data to initialize the model with.
          */
-        Model(const std::vector<Vertex> &vertices);
+        Model(const std::vector<Mesh::Vertex> &vertices);
 
         /**
          * @brief Cleans up Vulkan resources (vertex buffer and memory) used by the model.

@@ -49,6 +49,7 @@ float Kinesis::Raytracing::Spectra::z(float lambda) {
 glm::vec3 SpectralDistribution::toXYZ() {
     // get estimators, blah blah blah
     // TODO: Complete spectra to XYZ using correct matching curves
+    return glm::vec3(0,0,0);
 }
 
 /**

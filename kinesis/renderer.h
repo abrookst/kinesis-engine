@@ -1,7 +1,7 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
-#include <Vector>
+#include <vector>
 #include <cassert>
 #include <memory> // Required for std::unique_ptr
 

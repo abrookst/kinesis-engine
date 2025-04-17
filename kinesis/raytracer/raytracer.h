@@ -42,6 +42,9 @@ namespace Kinesis {
             // REPRESENTATION
             Kinesis::Mesh::Mesh *mesh;
             //ArgParser *args;
+
+            // SPECIAL TRANSMISSIVE FUNCTION
+            void TraceRay(Ray &ray, Hit &hit, SpectralDistribution &spd, int bounce_count = 0) const;
         };
     }
 }

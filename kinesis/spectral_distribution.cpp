@@ -23,24 +23,24 @@ glm::vec3 Kinesis::Raytracing::Spectra::xyz_to_rgb(glm::vec3 &xyz)
 }
 
 float Kinesis::Raytracing::Spectra::x(float lambda) {
-    float inner_1 = std::logf((lambda+570.1)/1014.0);
-    inner_1 *= inner_1 * -1250;
-    float outer_1 = powf(0.398, inner_1);
-    float inner_2 = std::logf((1338.0-lambda)/743.5);
-    inner_2 *= inner_2 * -234;
-    return outer_1 + powf(1.132, inner_2);
+    float inner_1 = std::logf((lambda+570.1f)/1014.0f);
+    inner_1 *= inner_1 * -1250.0f;
+    float outer_1 = powf(0.398f, inner_1);
+    float inner_2 = std::logf((1338.0f-lambda)/743.5f);
+    inner_2 *= inner_2 * -234.0f;
+    return outer_1 + powf(1.132f, inner_2);
 }
 
 float Kinesis::Raytracing::Spectra::y(float lambda) {
-    float inner = std::logf((lambda-556.1)/46.14);
-    inner *= inner * -0.5;
-    return powf(1.011, inner);
+    float inner = std::logf((lambda-556.1f)/46.14f);
+    inner *= inner * -0.5f;
+    return powf(1.011f, inner);
 }
 
 float Kinesis::Raytracing::Spectra::z(float lambda) {
-    float inner = std::logf((lambda-265.8)/180.4);
-    inner *= inner * -32.0;
-    return powf(2.060, inner);
+    float inner = std::logf((lambda-265.8f)/180.4f);
+    inner *= inner * -32.0f;
+    return powf(2.060f, inner);
 }
 
 /**
@@ -74,7 +74,7 @@ SpectralDistribution::SpectralDistribution(float *l) {
  * Appends values from a PDF
  */
 void SpectralDistribution::combineSPD(SpectralDistribution spd, glm::vec3 dir, glm::vec3 norm, float f) {
-    float part = fabsf(glm::dot(dir, norm)), pdf = part/3.14, weight = f * part / pdf;
+    float part = fabsf(glm::dot(dir, norm)), pdf = part/3.14f, weight = f * part / pdf;
     std::unordered_map<int, float>::iterator itr_new = spd.samples.begin(), itr = this->samples.begin();
     while (itr != spd.samples.end()) {
         itr->second += weight * itr_new->second;
@@ -86,7 +86,7 @@ void SpectralDistribution::combineSPD(SpectralDistribution spd, glm::vec3 dir, g
  * 
  */
 void SpectralDistribution::combineLambda(int lambda, float power, glm::vec3 dir, glm::vec3 norm, float f) {
-    float part = fabsf(glm::dot(dir, norm)), pdf = part/3.14, weight = f * part / pdf;
+    float part = fabsf(glm::dot(dir, norm)), pdf = part/3.14f, weight = f * part / pdf;
     this->samples[lambda] += weight * power;
 }
 

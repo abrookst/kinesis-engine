@@ -99,9 +99,11 @@ namespace Kinesis{
 
     }
 
-    void RenderSystem::renderGameObjects(VkCommandBuffer commandBuffer){
+    void RenderSystem::renderGameObjects(VkCommandBuffer commandBuffer,  const Camera& camera){
         // Bind the graphics pipeline associated with this render system
         Kinesis::Pipeline::bind(commandBuffer);
+
+        auto projView = camera.getProjection() * camera.getView();
 
         for(GameObject& gObj : gameObjects){
             if (gObj.model == nullptr) continue;
@@ -111,7 +113,7 @@ namespace Kinesis{
 
             // Prepare push constant data
             SimplePushConstantData push{};
-            push.transform = gObj.transform.mat4(); // Assuming mat2() gives the 2x2 transform part
+            push.transform = projView * gObj.transform.mat4(); // Assuming mat2() gives the 2x2 transform part
             push.color = gObj.color; // Pass color
 
             // Push constants to the pipeline

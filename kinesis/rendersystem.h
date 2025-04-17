@@ -2,6 +2,7 @@
 #define RENDERSYSTEM_H
 
 #include "kinesis.h"
+#include "camera.h"
 
 namespace Kinesis
 {
@@ -12,7 +13,7 @@ namespace Kinesis
         ~RenderSystem();
 
         VkPipelineLayout pipelineLayout;
-        void renderGameObjects(VkCommandBuffer commandBuffer);
+        void renderGameObjects(VkCommandBuffer commandBuffer, const Camera& camera);
 
         /**
          * @brief Creates the graphics pipeline.

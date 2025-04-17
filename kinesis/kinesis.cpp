@@ -3,6 +3,7 @@
 #include "GUI.h"
 #include "renderer.h"
 #include "rendersystem.h" // Include RenderSystem header
+#include "camera.h"
 #include <iostream> // For std::cerr
 #include <stdexcept> // For std::exception
 #include <vector>    // For std::vector
@@ -28,19 +29,18 @@ namespace Kinesis {
     ImGui_ImplVulkanH_Window g_MainWindowData;
     // Application specific objects
     RenderSystem* mainRenderSystem = nullptr;
+    Camera mainCamera = Camera();
+    
     std::vector<GameObject> gameObjects = std::vector<GameObject>();
 
 
     void initialize(int width, int height){
         try {
-            // 1. Initialize Window and Core Vulkan (calls Renderer::Initialize internally now)
-            std::cout << "1" << std::endl;
             Kinesis::Window::initialize(width, height);
-            std::cout << "2" << std::endl;
             loadGameObjects();
-            std::cout << "3" << std::endl;
              assert(Kinesis::Renderer::SwapChain != nullptr && "Renderer/SwapChain must be initialized before creating RenderSystem");
             mainRenderSystem = new RenderSystem(); // RenderSystem constructor now calls createPipeline
+            mainCamera.setViewDirection(glm::vec3(0.f), glm::vec3(0.5f, 0.f,1.f));
 
         } catch (const std::exception& e) {
             std::cerr << "Kinesis Initialization Failed: " << e.what() << std::endl;
@@ -89,10 +89,14 @@ namespace Kinesis {
             // --- Rendering ---
             try {
                  // Start the frame: acquire swapchain image, begin command buffer
-                if(auto commandBuffer = Kinesis::Renderer::beginFrame()){
+                float aspect = Kinesis::Renderer::getAspectRatio();
+                //mainCamera.setOrthographicProjection(-aspect,aspect,-1,1,-1,1);
+                mainCamera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 10.f);
+
+                 if(auto commandBuffer = Kinesis::Renderer::beginFrame()){
                     Kinesis::Renderer::beginSwapChainRenderPass(commandBuffer);
                     if (mainRenderSystem) {
-                        mainRenderSystem->renderGameObjects(commandBuffer);
+                        mainRenderSystem->renderGameObjects(commandBuffer, mainCamera);
                     }
                     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -173,7 +177,7 @@ namespace Kinesis {
 
         GameObject cube = GameObject::createGameObject("cube");
         cube.model = mod;
-        cube.transform.translation = {0.f,0.f,0.5f};
+        cube.transform.translation = {0.f,0.f,2.5f};
         cube.transform.scale = {.5f,.5f,.5f};
         gameObjects.push_back(std::move(cube));
     }

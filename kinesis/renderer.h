@@ -28,6 +28,8 @@ namespace Kinesis::Renderer {
     void beginSwapChainRenderPass(VkCommandBuffer cmdBuffer);
     void endSwapChainRenderPass(VkCommandBuffer cmdBuffer);
 
+    float getAspectRatio();
+
     /**
      * @brief Rerenders the swapchain given a window resizing.
      */

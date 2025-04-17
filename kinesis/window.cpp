@@ -105,6 +105,17 @@ namespace Kinesis::Window
                 create_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
             }
 #endif
+            if (IsExtensionAvailable(properties, VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME) &&
+                    IsExtensionAvailable(properties, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME) &&
+                    IsExtensionAvailable(properties, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME)) {
+                //VkPhysicalDeviceAccelerationStructureFeaturesKHR accelFeature{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR};
+                instance_extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+                //VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeature{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR};
+                instance_extensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+                instance_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+                Kinesis::GUI::raytracing_available = true;
+            }
+            else { Kinesis::GUI::raytracing_available = false; }
 
             // Enabling validation layers
 #ifdef APP_USE_VULKAN_DEBUG_REPORT

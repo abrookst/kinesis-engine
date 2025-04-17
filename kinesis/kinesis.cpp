@@ -106,43 +106,76 @@ namespace Kinesis {
         }
     }
 
+    std::unique_ptr<Model> createCubeModel(glm::vec3 offset) {
+        std::vector<Vertex> vertices{
+       
+            // left face (white) - Indices 0 to 5
+            Vertex(0, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}),
+            Vertex(1, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}),
+            Vertex(2, {-.5f, -.5f,  .5f}, {.9f, .9f, .9f}),
+            // Note: Original vertices list seemed to have duplicates, ensure correct vertices for a cube.
+            // Assuming unique vertices per face corner for simplicity here. Adjust if needed.
+            // Re-using vertex 0, 1, 2 for the second triangle of the left face
+            Vertex(3, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}), // Same as 0
+            Vertex(4, {-.5f,  .5f, -.5f}, {.9f, .9f, .9f}),
+            Vertex(5, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}), // Same as 1
+
+            // right face (yellow) - Indices 6 to 11
+            Vertex(6, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}),
+            Vertex(7, {.5f,  .5f,  .5f}, {.8f, .8f, .1f}),
+            Vertex(8, {.5f, -.5f,  .5f}, {.8f, .8f, .1f}),
+            Vertex(9, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}), // Same as 6
+            Vertex(10,{ .5f,  .5f, -.5f}, {.8f, .8f, .1f}),
+            Vertex(11,{ .5f,  .5f,  .5f}, {.8f, .8f, .1f}), // Same as 7
+
+            // top face (orange, y points down) - Indices 12 to 17
+            Vertex(12,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Vertex(13,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Vertex(14,{-.5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Vertex(15,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}), // Same as 12
+            Vertex(16,{ .5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Vertex(17,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}), // Same as 13
+
+            // bottom face (red) - Indices 18 to 23
+            Vertex(18,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Vertex(19,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Vertex(20,{-.5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Vertex(21,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}), // Same as 18
+            Vertex(22,{ .5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Vertex(23,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}), // Same as 19
+
+            // nose face (blue) - Indices 24 to 29
+            Vertex(24,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Vertex(25,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Vertex(26,{-.5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Vertex(27,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}), // Same as 24
+            Vertex(28,{ .5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Vertex(29,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}), // Same as 25
+
+            // tail face (green) - Indices 30 to 35
+            Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
+            Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
+        };
+        for (auto& v : vertices) {
+          v.position += offset;
+        }
+        return std::make_unique<Model>(vertices);
+      }
+
     // Load initial game scene data
     void loadGameObjects()
     {
-        std::vector<Vertex> vertices = {
-             // Position                 Color
-             Vertex(0, { 0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}), // Vertex 0: Bottom, Red
-             Vertex(1, { 0.5f,  0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}), // Vertex 1: Top right, Green
-             Vertex(2, {-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f})  // Vertex 2: Top left, Blue
-        };
+        std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
 
-
-         // Ensure device is ready before creating model (which creates buffers)
-        assert(g_Device != VK_NULL_HANDLE && "Device must be initialized before loading game objects");
-
-        // Create a shared pointer to the model
-        std::shared_ptr<Model> triModel = nullptr;
-        try {
-             triModel = std::make_shared<Model>(vertices);
-        } catch (const std::exception& e) {
-            std::cerr << "Failed to create model: " << e.what() << std::endl;
-            throw; // Rethrow, as rendering requires the model
-        }
-
-
-        // Create a GameObject using the factory method
-        GameObject triangle = GameObject::createGameObject("Test Triangle");
-        triangle.model = triModel; // Assign the model
-        triangle.color = glm::vec3(0.8f, 0.1f, 0.1f); // Set object color (used by push constant)
-        triangle.transform.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f)); // Center the triangle initially
-        triangle.transform.SetScale(glm::vec3(1.0f, 2.0f, 1.0f)); // Set scale to 1
-        triangle.transform.SetRotation(0.0f); // No rotation initially
-
-        // Add the game object to the global list using move semantics
-        gameObjects.push_back(std::move(triangle));
-
-
-        std::cout << "Loaded " << gameObjects.size() << " game object(s)." << std::endl;
+        GameObject cube = GameObject::createGameObject("cube");
+        cube.model = mod;
+        cube.transform.translation = {0.f,0.f,0.5f};
+        cube.transform.scale = {.5f,.5f,.5f};
+        gameObjects.push_back(std::move(cube));
     }
 
 } // namespace Kinesis

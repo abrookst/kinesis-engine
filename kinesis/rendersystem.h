@@ -27,8 +27,7 @@ namespace Kinesis
 
     struct SimplePushConstantData
     {
-        glm::mat2 transform{1.f};
-        glm::vec2 offset;
+        glm::mat4 transform{1.f};
         alignas(16) glm::vec3 color;
     };
 

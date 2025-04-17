@@ -36,8 +36,9 @@ namespace Kinesis {
         vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0); 
     }
 
-    Model::Model(const std::vector<Vertex> &vertices){
-        createVertexBuffers(vertices);
+    Model::Model(const std::string &path, const std::string& input_file){
+        mesh.Load(path, input_file);
+        createVertexBuffers(mesh.getVertices());
     }
 
     Model::~Model(){

@@ -34,8 +34,8 @@ namespace Kinesis::Mesh {
 			Material* getMaterial() const { return material; }
 
 			float getArea() const;
-			Kinesis::Math::Vector3 randomPoint() const;
-			Kinesis::Math::Vector3 computeNormal() const;
+			glm::vec3 randomPoint() const;
+			glm::vec3 computeNormal() const;
 
 			// =========
 			// MODIFIERS

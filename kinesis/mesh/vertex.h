@@ -11,12 +11,12 @@ namespace Kinesis::Mesh {
 
 		// ========================
 		// CONSTRUCTOR & DESTRUCTOR
-		Vertex(int i, const Vector3 &pos) : position(pos) { index = i; s = 0; t = 0; }
+		Vertex(int i, const glm::vec3 &pos) : position(pos) { index = i; s = 0; t = 0; }
 
 		// =========
 		// ACCESSORS
 		int getIndex() const { return index; }
-		const Vector3& getPos() const { return position; }
+		const glm::vec3& getPos() const { return position; }
 		float get_s() const { return s; }
 		float get_t() const { return t; }
 
@@ -28,12 +28,12 @@ namespace Kinesis::Mesh {
 
 		// ==============
 		// REPRESENTATION
-		Vector3 position;
+		glm::vec3 position;
 
-			// texture coordinates
-			// NOTE: arguably these should be stored at the faces of the mesh
-			// rather than the vertices
-			float s,t;
+    // texture coordinates
+    // NOTE: arguably these should be stored at the faces of the mesh
+    // rather than the vertices
+    float s,t;
 
 		// this is the index from the original .obj file.
 		// technically not part of the half-edge data structure

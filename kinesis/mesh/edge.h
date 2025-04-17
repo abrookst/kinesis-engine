@@ -29,7 +29,7 @@ namespace Kinesis::Mesh {
 			Edge* getOpposite() const {
 				// warning!  the opposite edge might be NULL!
 				return opposite; }
-			float Length() const { return (start_vertex->getPos() - end_vertex->getPos()).Magnitude(); };
+			glm::length_t Length() const { return (start_vertex->getPos() - end_vertex->getPos()).length(); };
 
 			// =========
 			// MODIFIERS

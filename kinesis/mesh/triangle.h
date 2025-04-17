@@ -3,6 +3,8 @@
 
 #include "mesh/edge.h"
 #include "mesh/vertex.h"
+#include "./raytracer/hit.h"
+#include "./raytracer/ray.h"
 
 
 namespace Kinesis::Mesh {
@@ -11,14 +13,14 @@ namespace Kinesis::Mesh {
 		public:
 			// ========================
 			// CONSTRUCTOR & DESTRUCTOR
-			Triangle(Material *m) {
+			Triangle(Kinesis::Mesh::Material *m) {
 				edge = nullptr;
 				material = m;
 			}
 
 			// =========
 			// ACCESSORS
-			Vertex* operator[](int i) const {
+			Kinesis::Mesh::Vertex* operator[](int i) const {
 				assert (edge != nullptr);
 				if (i == 0) return edge->getStartVertex();
 				if (i == 1) return edge->getNext()->getStartVertex();
@@ -26,16 +28,16 @@ namespace Kinesis::Mesh {
 				assert(0); exit(0);
 			}
 
-			Edge* getEdge() const {
+			Kinesis::Mesh::Edge* getEdge() const {
 				assert (edge != nullptr);
 				return edge;
 			}
 
-			Material* getMaterial() const { return material; }
+			Kinesis::Mesh::Material* getMaterial() const { return material; }
 
 			float getArea() const;
-			Kinesis::Math::Vector3 randomPoint() const;
-			Kinesis::Math::Vector3 computeNormal() const;
+			glm::vec3 randomPoint() const;
+			glm::vec3 computeNormal() const;
 
 			// =========
 			// MODIFIERS
@@ -44,13 +46,24 @@ namespace Kinesis::Mesh {
 				assert (e != nullptr);
 				edge = e;
 			}
+
+			// INTERSECTION
+			bool intersect(const Kinesis::Raytracing::Ray &r, Kinesis::Raytracing::Hit &h) const;
+
 		protected:
-			Triangle(const Triangle &/*t*/) { assert(0); exit(0); }
-			Triangle& operator=(const Triangle &/*t*/) { assert(0); exit(0); }
+			Triangle(const Kinesis::Mesh::Triangle &/*t*/) { assert(0); exit(0); }
+			Kinesis::Mesh::Triangle& operator=(const Triangle &/*t*/) { assert(0); exit(0); }
 			// ==============
 			// REPRESENTATION
-			Edge *edge;
-			Material *material;
+			Kinesis::Mesh::Edge *edge;
+			Kinesis::Mesh::Material *material;
+
+			// INTERSECTION PART 2
+			bool plane_intersect(const Kinesis::Raytracing::Ray &r, Kinesis::Raytracing::Hit &h) const;
+			bool triangle_intersect(const Kinesis::Raytracing::Ray &r, Kinesis::Raytracing::Hit &h, Kinesis::Mesh::Vertex *a, Kinesis::Mesh::Vertex *b, Kinesis::Mesh::Vertex *c) const;
+			double det3x3(double a1,double a2,double a3, double b1,double b2,double b3, double c1,double c2,double c3) const;
+			double det2x2(double a, double b, double c, double d) const;
+
 	};
 
 }

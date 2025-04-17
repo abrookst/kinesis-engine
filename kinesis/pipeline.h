@@ -9,17 +9,19 @@
 namespace Kinesis::Pipeline
 {
     struct ConfigInfo {
-        VkViewport viewport;
-        VkRect2D scissor;
+        VkPipelineViewportStateCreateInfo viewportInfo;
         VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo;
         VkPipelineRasterizationStateCreateInfo rasterizationInfo;
         VkPipelineMultisampleStateCreateInfo multisampleInfo;
         VkPipelineColorBlendAttachmentState colorBlendAttachment;
         VkPipelineColorBlendStateCreateInfo colorBlendInfo;
         VkPipelineDepthStencilStateCreateInfo depthStencilInfo;
+        std::vector<VkDynamicState> dynamicStateEnables;
+        VkPipelineDynamicStateCreateInfo dynamicStateInfo;
         VkPipelineLayout pipelineLayout = nullptr;
         VkRenderPass renderPass = nullptr;
         uint32_t subpass = 0;
+       
     };
 
     /**
@@ -37,11 +39,9 @@ namespace Kinesis::Pipeline
 
     /**
      * @brief Creates default pipeline configuration
-     * @param width Viewport width
-     * @param height Viewport height
-     * @return Default ConfigInfo structure
+     * @param configInfo the passed in dynamic configuration information
      */
-    ConfigInfo defaultConfigInfo(uint32_t width, uint32_t height);
+    void defaultConfigInfo(ConfigInfo& configInfo);
 
     /**
      * @brief Binds the pipeline to a command buffer

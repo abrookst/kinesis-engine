@@ -1,5 +1,6 @@
 #include "pipeline.h"
 #include "model.h"
+#include "mesh/vertex.h"
 
 #include <fstream>
 #include <stdexcept>
@@ -12,22 +13,24 @@ namespace Kinesis::Pipeline
     static VkShaderModule vertModule = VK_NULL_HANDLE;
     static VkShaderModule fragModule = VK_NULL_HANDLE;
 
-    void initialize(const std::string& vertFilePath, const std::string& fragFilePath, ConfigInfo& configInfo)
+    void initialize(const std::string &vertFilePath, const std::string &fragFilePath, ConfigInfo &configInfo)
     {
         assert(configInfo.pipelineLayout != VK_NULL_HANDLE && "Cannot create pipeline, no layout specified.");
         assert(configInfo.renderPass != VK_NULL_HANDLE && "Cannot create pipeline, no render pass specified.");
-        
+
         auto vertCode = readFile(vertFilePath);
         auto fragCode = readFile(fragFilePath);
 
         // Create shader modules
-        auto createShaderModule = [](const std::vector<char>& code, VkShaderModule* shaderModule) {
+        auto createShaderModule = [](const std::vector<char> &code, VkShaderModule *shaderModule)
+        {
             VkShaderModuleCreateInfo createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
             createInfo.codeSize = code.size();
-            createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+            createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
-            if (vkCreateShaderModule(g_Device, &createInfo, nullptr, shaderModule) != VK_SUCCESS) {
+            if (vkCreateShaderModule(g_Device, &createInfo, nullptr, shaderModule) != VK_SUCCESS)
+            {
                 throw std::runtime_error("failed to create shader module!");
             }
         };
@@ -52,8 +55,8 @@ namespace Kinesis::Pipeline
         shaderStages[1].pNext = nullptr;
         shaderStages[1].pSpecializationInfo = nullptr;
 
-        auto bindingDescriptions = Kinesis::Model::Vertex::getBindingDescriptions();
-        auto attributeDescriptions = Kinesis::Model::Vertex::getAttributeDescriptions();
+        auto bindingDescriptions = Vertex::getBindingDescriptions();
+        auto attributeDescriptions = Vertex::getAttributeDescriptions();
         VkPipelineVertexInputStateCreateInfo vertInputInfo{};
         vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
@@ -61,20 +64,13 @@ namespace Kinesis::Pipeline
         vertInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
         vertInputInfo.pVertexBindingDescriptions = bindingDescriptions.data();
 
-        VkPipelineViewportStateCreateInfo viewportInfo{};
-        viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-        viewportInfo.viewportCount = 1;
-        viewportInfo.pViewports = &configInfo.viewport;
-        viewportInfo.scissorCount = 1;
-        viewportInfo.pScissors = &configInfo.scissor;
-
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.stageCount = 2;
         pipelineInfo.pStages = shaderStages;
         pipelineInfo.pVertexInputState = &vertInputInfo;
         pipelineInfo.pInputAssemblyState = &configInfo.inputAssemblyInfo;
-        pipelineInfo.pViewportState = &viewportInfo;
+        pipelineInfo.pViewportState = &configInfo.viewportInfo;
         pipelineInfo.pRasterizationState = &configInfo.rasterizationInfo;
         pipelineInfo.pMultisampleState = &configInfo.multisampleInfo;
         pipelineInfo.pColorBlendState = &configInfo.colorBlendInfo;
@@ -84,50 +80,45 @@ namespace Kinesis::Pipeline
         pipelineInfo.subpass = configInfo.subpass;
         pipelineInfo.basePipelineIndex = -1;
         pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+        pipelineInfo.pDynamicState = &configInfo.dynamicStateInfo;
 
-        if (vkCreateGraphicsPipelines(g_Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(g_Device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+        {
             throw std::runtime_error("Failed to create the graphics pipeline!");
         }
     }
 
     void cleanup()
     {
-        if (vertModule != VK_NULL_HANDLE) {
+        if (vertModule != VK_NULL_HANDLE)
+        {
             vkDestroyShaderModule(g_Device, vertModule, nullptr);
             vertModule = VK_NULL_HANDLE;
         }
-        if (fragModule != VK_NULL_HANDLE) {
+        if (fragModule != VK_NULL_HANDLE)
+        {
             vkDestroyShaderModule(g_Device, fragModule, nullptr);
             fragModule = VK_NULL_HANDLE;
         }
-        if (graphicsPipeline != VK_NULL_HANDLE) {
+        if (graphicsPipeline != VK_NULL_HANDLE)
+        {
             vkDestroyPipeline(g_Device, graphicsPipeline, nullptr);
             graphicsPipeline = VK_NULL_HANDLE;
         }
     }
 
-    ConfigInfo defaultConfigInfo(uint32_t width, uint32_t height)
+    void defaultConfigInfo(ConfigInfo& configInfo)
     {
-        std::cout << width << " " << height << std::endl;
-        ConfigInfo configInfo{};
-       
-        // Input assembly
         configInfo.inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         configInfo.inputAssemblyInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         configInfo.inputAssemblyInfo.primitiveRestartEnable = VK_FALSE;
-       
-        // Viewport and scissor
-        configInfo.viewport.x = 0.0f;
-        configInfo.viewport.y = 0.0f;
-        configInfo.viewport.width = static_cast<float>(width);
-        configInfo.viewport.height = static_cast<float>(height);
-        configInfo.viewport.minDepth = 0.0f;
-        configInfo.viewport.maxDepth = 1.0f;
-       
-        configInfo.scissor.offset = {0, 0};
-        configInfo.scissor.extent = {width, height};
-       
-        // Rasterization
+
+        configInfo.viewportInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        configInfo.viewportInfo.viewportCount = 1;
+        configInfo.viewportInfo.pViewports = nullptr;
+        configInfo.viewportInfo.scissorCount = 1;
+        configInfo.viewportInfo.pScissors = nullptr;
+
         configInfo.rasterizationInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         configInfo.rasterizationInfo.depthClampEnable = VK_FALSE;
         configInfo.rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
@@ -136,54 +127,55 @@ namespace Kinesis::Pipeline
         configInfo.rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
         configInfo.rasterizationInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
         configInfo.rasterizationInfo.depthBiasEnable = VK_FALSE;
-        configInfo.rasterizationInfo.depthBiasConstantFactor = 0.0f;
-        configInfo.rasterizationInfo.depthBiasClamp = 0.0f;
-        configInfo.rasterizationInfo.depthBiasSlopeFactor = 0.0f;
-       
-        // Multisampling
+        configInfo.rasterizationInfo.depthBiasConstantFactor = 0.0f; // Optional
+        configInfo.rasterizationInfo.depthBiasClamp = 0.0f;          // Optional
+        configInfo.rasterizationInfo.depthBiasSlopeFactor = 0.0f;    // Optional
+
         configInfo.multisampleInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         configInfo.multisampleInfo.sampleShadingEnable = VK_FALSE;
         configInfo.multisampleInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        configInfo.multisampleInfo.minSampleShading = 1.0f;
-        configInfo.multisampleInfo.pSampleMask = nullptr;
-        configInfo.multisampleInfo.alphaToCoverageEnable = VK_FALSE;
-        configInfo.multisampleInfo.alphaToOneEnable = VK_FALSE;
-       
-        // Color blending
+        configInfo.multisampleInfo.minSampleShading = 1.0f;          // Optional
+        configInfo.multisampleInfo.pSampleMask = nullptr;            // Optional
+        configInfo.multisampleInfo.alphaToCoverageEnable = VK_FALSE; // Optional
+        configInfo.multisampleInfo.alphaToOneEnable = VK_FALSE;      // Optional
+
         configInfo.colorBlendAttachment.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | 
-            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
         configInfo.colorBlendAttachment.blendEnable = VK_FALSE;
-        configInfo.colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-        configInfo.colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
-        configInfo.colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
-        configInfo.colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        configInfo.colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-        configInfo.colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
-       
+        configInfo.colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+        configInfo.colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+        configInfo.colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;             // Optional
+        configInfo.colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;  // Optional
+        configInfo.colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+        configInfo.colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;             // Optional
+
         configInfo.colorBlendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         configInfo.colorBlendInfo.logicOpEnable = VK_FALSE;
-        configInfo.colorBlendInfo.logicOp = VK_LOGIC_OP_COPY;
+        configInfo.colorBlendInfo.logicOp = VK_LOGIC_OP_COPY; // Optional
         configInfo.colorBlendInfo.attachmentCount = 1;
         configInfo.colorBlendInfo.pAttachments = &configInfo.colorBlendAttachment;
-        configInfo.colorBlendInfo.blendConstants[0] = 0.0f;
-        configInfo.colorBlendInfo.blendConstants[1] = 0.0f;
-        configInfo.colorBlendInfo.blendConstants[2] = 0.0f;
-        configInfo.colorBlendInfo.blendConstants[3] = 0.0f;
-       
-        // Depth stencil
+        configInfo.colorBlendInfo.blendConstants[0] = 0.0f; // Optional
+        configInfo.colorBlendInfo.blendConstants[1] = 0.0f; // Optional
+        configInfo.colorBlendInfo.blendConstants[2] = 0.0f; // Optional
+        configInfo.colorBlendInfo.blendConstants[3] = 0.0f; // Optional
+
         configInfo.depthStencilInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
         configInfo.depthStencilInfo.depthTestEnable = VK_TRUE;
         configInfo.depthStencilInfo.depthWriteEnable = VK_TRUE;
         configInfo.depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS;
         configInfo.depthStencilInfo.depthBoundsTestEnable = VK_FALSE;
-        configInfo.depthStencilInfo.minDepthBounds = 0.0f;
-        configInfo.depthStencilInfo.maxDepthBounds = 1.0f;
+        configInfo.depthStencilInfo.minDepthBounds = 0.0f; // Optional
+        configInfo.depthStencilInfo.maxDepthBounds = 1.0f; // Optional
         configInfo.depthStencilInfo.stencilTestEnable = VK_FALSE;
-        configInfo.depthStencilInfo.front = {};
-        configInfo.depthStencilInfo.back = {};
-       
-        return configInfo;
+        configInfo.depthStencilInfo.front = {}; // Optional
+        configInfo.depthStencilInfo.back = {};  // Optional
+
+        configInfo.dynamicStateEnables = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+        configInfo.dynamicStateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        configInfo.dynamicStateInfo.pDynamicStates = configInfo.dynamicStateEnables.data();
+        configInfo.dynamicStateInfo.dynamicStateCount = static_cast<uint32_t>(configInfo.dynamicStateEnables.size());
+        configInfo.dynamicStateInfo.flags = 0;
     }
 
     void bind(VkCommandBuffer commandBuffer)
@@ -191,7 +183,7 @@ namespace Kinesis::Pipeline
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
     }
 
-    std::vector<char> readFile(const std::string& filePath)
+    std::vector<char> readFile(const std::string &filePath)
     {
         std::ifstream file{filePath, std::ios::ate | std::ios::binary};
         if (!file.is_open())

@@ -2,15 +2,9 @@
 #include <cassert>
 #include <cstring>
 
-namespace Kinesis::Model {
+namespace Kinesis {
 
-  
-    VkBuffer vertexBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory = VK_NULL_HANDLE;
-    uint32_t vertexCount = 0;
-
-
-    void createVertexBuffers(const std::vector<Vertex> &vertices){
+    void Model::createVertexBuffers(const std::vector<Vertex> &vertices){
         vertexCount = static_cast<uint32_t>(vertices.size());
         assert(vertexCount >= 3 && "Vertex count must be at least 3!" ); 
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount;
@@ -31,51 +25,24 @@ namespace Kinesis::Model {
         vkUnmapMemory(g_Device, vertexBufferMemory);
     }
 
-    std::vector<VkVertexInputBindingDescription> Vertex::getBindingDescriptions(){
-        return {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
-    }
-
-    std::vector<VkVertexInputAttributeDescription> Vertex::getAttributeDescriptions(){
-         std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
-         attributeDescriptions[0].binding = 0; 
-         attributeDescriptions[0].location = 0; 
-         attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT; 
-         attributeDescriptions[0].offset = offsetof(Vertex, position);
-
-         attributeDescriptions[1].binding = 0; 
-         attributeDescriptions[1].location = 1; 
-         attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT; 
-         attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-         return attributeDescriptions;
-    }
-
-    void bind(VkCommandBuffer commandBuffer){
+    void Model::bind(VkCommandBuffer commandBuffer){
         VkBuffer buffers[] = {vertexBuffer}; 
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
     }
 
-    void draw(VkCommandBuffer commandBuffer){
+    void Model::draw(VkCommandBuffer commandBuffer){
 
         vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0); 
     }
 
-    void initialize(const std::vector<Vertex> &vertices){
+    Model::Model(const std::vector<Vertex> &vertices){
         createVertexBuffers(vertices);
     }
 
-    void cleanup(){
-
-        if (vertexBuffer != VK_NULL_HANDLE) {
-           vkDestroyBuffer(g_Device, vertexBuffer, nullptr);
-           vertexBuffer = VK_NULL_HANDLE; 
-        }
-       if (vertexBufferMemory != VK_NULL_HANDLE) {
-           vkFreeMemory(g_Device, vertexBufferMemory, nullptr);
-           vertexBufferMemory = VK_NULL_HANDLE;
-       }
-       vertexCount = 0; 
+    Model::~Model(){
+        vkDestroyBuffer(g_Device, vertexBuffer, nullptr);
+        vkFreeMemory(g_Device, vertexBufferMemory, nullptr); 
     }
 
 }

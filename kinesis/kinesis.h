@@ -16,6 +16,10 @@
 #include <volk.h>
 #endif
 
+#include "gameobject.h"
+#include "rendersystem.h"
+
+
 // #define APP_USE_UNLIMITED_FRAME_RATE
 #ifdef _DEBUG
 #define APP_USE_VULKAN_DEBUG_REPORT
@@ -38,9 +42,19 @@ namespace Kinesis
     extern uint32_t g_MinImageCount;
     extern bool g_SwapChainRebuild;
 
+    class RenderSystem;
+    extern RenderSystem* mainRenderSystem;
+
+    extern std::vector<GameObject> gameObjects;
+
     //namespace functions
     bool run();
     void initialize(int width = 600, int height = 600);
+
+    /**
+     * @brief Loads the vertexbuffer into the model
+     */
+    void loadGameObjects();
 }
 
 #endif

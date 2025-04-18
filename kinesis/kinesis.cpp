@@ -4,11 +4,13 @@
 #include "renderer.h"
 #include "rendersystem.h" // Include RenderSystem header
 #include "camera.h"
+#include "keyboard_controller.h"
 #include <iostream> // For std::cerr
 #include <stdexcept> // For std::exception
 #include <vector>    // For std::vector
 #include <memory>    // For std::shared_ptr
 #include <cassert>   // For assert
+#include <chrono>
 
 
 using namespace Kinesis;
@@ -30,9 +32,10 @@ namespace Kinesis {
     // Application specific objects
     RenderSystem* mainRenderSystem = nullptr;
     Camera mainCamera = Camera();
+    GameObject player  = GameObject::createGameObject("player");
     
     std::vector<GameObject> gameObjects = std::vector<GameObject>();
-
+    auto currentTime = std::chrono::high_resolution_clock::now();
 
     void initialize(int width, int height){
         try {
@@ -40,7 +43,6 @@ namespace Kinesis {
             loadGameObjects();
              assert(Kinesis::Renderer::SwapChain != nullptr && "Renderer/SwapChain must be initialized before creating RenderSystem");
             mainRenderSystem = new RenderSystem(); // RenderSystem constructor now calls createPipeline
-            mainCamera.setViewDirection(glm::vec3(0.f), glm::vec3(0.5f, 0.f,1.f));
 
         } catch (const std::exception& e) {
             std::cerr << "Kinesis Initialization Failed: " << e.what() << std::endl;
@@ -58,6 +60,7 @@ namespace Kinesis {
     // Main application loop
     bool run()
     {
+        
          // Check if the window should close (e.g., user clicked the close button)
         if(glfwWindowShouldClose(Kinesis::Window::window)){
             // Perform cleanup before exiting
@@ -82,6 +85,11 @@ namespace Kinesis {
         else{
             // --- Input and Event Processing ---
             glfwPollEvents(); // Process window events (input, resize, etc.)
+            auto newTime = std::chrono::high_resolution_clock::now();
+            float frameTime = std::chrono::duration<float, std::chrono::seconds::period>(newTime-currentTime).count();
+            currentTime = newTime;
+            Kinesis::Keyboard::moveInPlaneXZ(frameTime, player);
+            mainCamera.setViewYXZ(player.transform.translation, player.transform.rotation);
 
             // --- GUI Update ---
             Kinesis::GUI::update_imgui(); // Prepare ImGui frame data

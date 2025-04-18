@@ -13,16 +13,14 @@ bool Kinesis::Raytracing::RayTracer::CastRay(const Ray &ray, Hit &h) const
 
     // TODO: check each gameobject in the scene and see if there is an intersection w/ a tri on the object
     // checks if material is transmissive. see triangle.cpp
-    /*
-    for (int i = 0; i < mesh->numOriginalQuads(); i++)
-    {
-        Triangle *t = mesh->getOriginalQuad(i);
-        if (t->intersect(ray, h))
-            answer = true;
+    for (Kinesis::GameObject obj : gameObjects) {
+        // get each tri in game object's mesh
+        for (Kinesis::Mesh::Triangle *t : ) {
+            if (t->intersect(ray, h))
+                answer = true;
+        }
     }
-    */
     return answer;
-    
 }
 
 // ===========================================================================
@@ -51,67 +49,38 @@ SpectralDistribution RayTracer::TraceRay(Ray &ray, Hit &hit, int bounce_count) c
         - refractive index
         - emits light or no
     */
-    Material *m = hit.getMaterial();
+    Kinesis::Mesh::Material *m = hit.getMaterial();
     assert(m != NULL);
-
-    // rays coming from the light source are set to white, don't bother to ray trace further.
-    if (m->getEmittedColor().Length() > 0.001)
-    {
-        // return distribution for light source if so
-        // or empty so it doesn't cause issues with the rest of the distribution
-        return /* */;
-    }
 
     glm::vec3 normal = hit.getNormal();
     glm::vec3 point = ray.pointAtParameter(hit.getT());
     glm::vec3 answer;
-    SpectralDistribution spd;
+    SpectralDistribution spd = SpectralDistribution();
 
-    // TODO: do we need this?
-    /*
-    glm::vec3 ambient_light = glm::vec3(args->mesh_data->ambient_light.data[0],
-                                args->mesh_data->ambient_light.data[1],
-                                args->mesh_data->ambient_light.data[2]);
-    */
-
-    // ----------------------------------------------
-    //  start with the indirect light (ambient light)
-    // TODO: this is point to be pdf at lambda actually
-    glm::vec3 diffuse_color = m->getDiffuseColor(hit.get_s(), hit.get_t());
-    // the usual ray tracing hack for indirect light
-    answer = diffuse_color * ambient_light;
 
     // ----------------------------------------------
     // add contributions from each light that is not in shadow
     // TODO: get the lights int he scene and do shadow calculations
     //       idk how tf. shadow calculation works in this case
     //       leave this alone for now??
+    // Get the lights in the scenes. Store somewhere globally??
+    //*
     /*
     int num_lights = mesh->getLights().size();
     for (int i = 0; i < num_lights; i++)
     {
-
-        Face *f = mesh->getLights()[i];
-        glm::vec3 lightColor = f->getMaterial()->getEmittedColor() * f->getArea();
-        glm::vec3 myLightColor;
-        glm::vec3 lightCentroid = f->computeCentroid();
-        glm::vec3 dirToLightCentroid = lightCentroid - point;
-        dirToLightCentroid.Normalize();
+        Kinesis::Light *l = ///;
+        SpectralDistribution lightColor = // get light color spd :);
+        
+        glm::vec3 dirToLightCentroid = l->position - point;
+        dirToLightCentroid = glm::normal(dirToLightCentroid);
 
         float distToLightCentroid = 0;
-        glm::vec3 light_point;
         glm::vec3 shadows = glm::vec3(0, 0, 0);
 
-        for (int k = 0; k < args->mesh_data->num_shadow_samples; k++)
-        {
-            glm::vec3 light_point = f->RandomPoint();
-            if (args->mesh_data->num_shadow_samples == 1)
-                light_point = f->computeCentroid();
-            else
-                light_point = f->RandomPoint();
-
+            glm::vec3 light_point =  l->position;
             glm::vec3 light_vec = light_point - point;
-            light_vec.Normalize();
+            light_vec = glm::normal(light_vec);
             Ray light_ray = Ray(point, light_vec);
             Hit light_hit = Hit();
 
@@ -124,8 +93,9 @@ SpectralDistribution RayTracer::TraceRay(Ray &ray, Hit &hit, int bounce_count) c
                 dirToLightCentroid.Normalize();
                 myLightColor = 1 / float(M_PI * distToLightCentroid * distToLightCentroid) * lightColor;
                 shadows += m->Shade(ray, hit, dirToLightCentroid, myLightColor);
+                spd.combineSPD()
             }
-        }
+                
         
         if (args->mesh_data->num_shadow_samples == 0)
         {
@@ -134,33 +104,77 @@ SpectralDistribution RayTracer::TraceRay(Ray &ray, Hit &hit, int bounce_count) c
             answer += m->Shade(ray, hit, dirToLightCentroid, myLightColor);
             continue;
         }
-        
-
-        // add the lighting contribution from this particular light at this point
-        // (fix this to check for blockers between the light & this surface)
 
         shadows /= args->mesh_data->num_shadow_samples;
         answer += shadows;
     }
-        */
+        // compute the perfect mirror direction
+inline Vec3f MirrorDirection(const Vec3f &normal, const Vec3f &incoming) {
+  float dot = incoming.Dot3(normal);
+  Vec3f r = (incoming*-1.0f) + normal * (2 * dot);
+  return r*-1.0f;
+}
+    //*/
 
     // ----------------------------------------------
     // add contribution from reflection, if the surface is shiny
-
-    glm::vec3 reflectiveColor = Spectra::rgb_to_xyz(m->getReflectiveColor()); // this is the color of the thing
-
-    if (bounce_count > 0)
-    {
-        // TODO: instead of mirror direction, bounce in a random direction
-        Ray reflect_ray = Ray(point, /*MirrorDirection(normal, ray.getDirection())*/, ray.getLambda());
-        Hit reflect_hit = Hit();
-        
-        // calculate fresnel
-        float fresnel;
-        spd.combineSPD(TraceRay(reflect_ray, reflect_hit, bounce_count - 1), reflect_ray.getDirection(), reflect_hit.getNormal(), fresnel);
+    if (m->isReflective()) {    // 2
+        // Hopefully we don't have this in our scenes, but I want the logic to be there
+        if (bounce_count > 0)
+        {
+            // TODO: instead of mirror direction, bounce in a random direction
+            glm::vec3 mirror_dir = (ray.getDirection()*-1.0f) + glm::dot(ray.getDirection(), normal) * 2 * normal;
+            Ray reflect_ray = Ray(point, mirror_dir, ray.getLambda());
+            Hit reflect_hit = Hit();
+            
+            // calculate fresnel
+            float fresnel = 1.0f;
+            spd.combineSPD(TraceRay(reflect_ray, reflect_hit, bounce_count - 1), reflect_ray.getDirection(), reflect_hit.getNormal(), fresnel);
+        }
+    }
+    else if (m->isTransmissive()) { // 1
+        // split ray and CRY.
+        for (unsigned int i = 0; i < Spectra::num_lambdas; i++) {
+            glm::vec3 transmiss_dir;
+            Ray transmiss_ray = Ray(point, transmissive_dir, ray.getLambda());
+            Hit transmiss_hit = Hit();
+            TraceRay(transmiss_ray, transmiss_hit, spd, bounce_count);
+        }
     }
 
     return spd;
+}
+
+/**
+ * Special case of ray trace
+ */
+void TraceRay(Ray &ray, Hit &hit, SpectralDistribution &spd, int bounce_count = 0) const {
+    hit = Hit();
+    bool intersect = CastRay(ray, hit);
+
+    // This is when a ray goes into the distance and cries
+    if (intersect == false)
+    {
+        // TODO: figure out what bg color we want here
+        // This should be default and can be searched with SpectralDistribution
+        /**combineLambda(int lambda, float power, glm::vec3 dir, glm::vec3 norm, float f) */
+        spd.combineLambda(ray.getLambda(), 1.0f, ray.getDirection(), hit.getNormal(), 1.0f);
+        return;
+    }
+    
+    Kinesis::Mesh::Material *m = hit.getMaterial();
+    assert(m != NULL);
+
+    glm::vec3 normal = hit.getNormal();
+    glm::vec3 point = ray.pointAtParameter(hit.getT());
+    glm::vec3 answer;
+    SpectralDistribution spd;
+
+    /*
+    for (lights) {
+        
+    }
+     */
 }
 
 

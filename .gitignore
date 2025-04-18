@@ -5,3 +5,4 @@ CMakePresets.json
 /docs
 /kinesis/assets/shaders/bin
 /.cache
+/out

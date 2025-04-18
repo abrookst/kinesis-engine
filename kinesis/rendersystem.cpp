@@ -83,9 +83,15 @@ namespace Kinesis{
 
         try {
              // Make sure the shader paths are correct relative to your build output directory
+            #if __APPLE__
+            Kinesis::Pipeline::initialize("../../../../../../kinesis/assets/shaders/bin/simple_shader.vert.spv", // Example relative path adjustment
+                                          "../../../../../../kinesis/assets/shaders/bin/simple_shader.frag.spv", // Example relative path adjustment
+                                          configInfo);
+            #else
             Kinesis::Pipeline::initialize("../../kinesis/assets/shaders/bin/simple_shader.vert.spv", // Example relative path adjustment
                                           "../../kinesis/assets/shaders/bin/simple_shader.frag.spv", // Example relative path adjustment
                                           configInfo);
+            #endif
         } catch (const std::exception& e) {
              std::cerr << "Pipeline Initialization Failed: " << e.what() << std::endl;
              // You might want to clean up the layout if pipeline creation fails partially

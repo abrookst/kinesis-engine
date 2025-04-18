@@ -8,9 +8,11 @@
 namespace Kinesis {
     namespace Raytracing {
         namespace Spectra {
+
             // array of lambdas
             const int num_lambdas = 7;
             const int lambdas[] = {400, 450, 475, 550, 580, 600, 700};
+            float pows[] = {1.25, 450, 475, 550, 580, 600, 700};
 
             // Helper functions for conversion from CIE XYZ to rgb and back
             glm::vec3 rgb_to_xyz(glm::vec3 &rgb);
@@ -33,6 +35,8 @@ namespace Kinesis {
             private:
                 std::unordered_map<int, float> samples;
             };
+
+            const SpectralDistribution light = SpectralDistribution(pows);
         }
     }
 }

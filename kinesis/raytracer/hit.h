@@ -34,11 +34,12 @@ namespace Kinesis {
             glm::vec3 getNormal() const { return normal; }
             float get_s() const { return texture_s; }
             float get_t() const { return texture_t; }
+            bool isEnteringMedium() const { return entering_medium; }
 
             // MODIFIER
             void set(float _t, Kinesis::Mesh::Material *m, glm::vec3 n) {
               t = _t; material = m; normal = n; 
-              texture_s = 0; texture_t = 0; }
+              texture_s = 0; texture_t = 0; entering_medium = !entering_medium; }
 
             void setTextureCoords(float t_s, float t_t) {
               texture_s = t_s; texture_t = t_t; 
@@ -51,6 +52,7 @@ namespace Kinesis {
             Kinesis::Mesh::Material *material;
             glm::vec3 normal;
             float texture_s, texture_t;
+            bool entering_medium = false;
         };
     }
 

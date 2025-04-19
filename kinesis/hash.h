@@ -35,13 +35,13 @@ inline unsigned int ordered_two_int_hash(unsigned int a, unsigned int b) {
 
 struct orderedvertexpairhash {
   size_t operator()(std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*> p) const {
-    return ordered_two_int_hash(p.first->getIndex(),p.second->getIndex());
+    return ordered_two_int_hash(p.first->index,p.second->index);
   }
 };
 
 struct orderedsamevertexpair {
   bool operator()(std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*> p1, std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*>p2) const {
-    if (p1.first->getIndex() == p2.first->getIndex() && p1.second->getIndex() == p2.second->getIndex())
+    if (p1.first->index == p2.first->index && p1.second->index == p2.second->index)
       return true;
     return false;
   }
@@ -67,14 +67,14 @@ inline unsigned int unordered_two_int_hash(unsigned int a, unsigned int b) {
 
 struct unorderedvertexpairhash {
   size_t operator()(std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*> p) const {
-    return unordered_two_int_hash(p.first->getIndex(),p.second->getIndex());
+    return unordered_two_int_hash(p.first->index,p.second->index);
   }
 };
 
 struct unorderedsamevertexpair {
   bool operator()(std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*> p1, std::pair<Kinesis::Mesh::Vertex*,Kinesis::Mesh::Vertex*>p2) const {
-    if ((p1.first->getIndex() == p2.first->getIndex() && p1.second->getIndex() == p2.second->getIndex()) ||
-	(p1.first->getIndex() == p2.second->getIndex() && p1.second->getIndex() == p2.first->getIndex())) return true;
+    if ((p1.first->index == p2.first->index && p1.second->index == p2.second->index) ||
+	(p1.first->index == p2.second->index && p1.second->index == p2.first->index)) return true;
     return false;
   }
 };

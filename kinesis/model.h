@@ -3,6 +3,7 @@
 
 #include <vector>
 #include "window.h"
+#include "mesh/mesh.h"
 #include "mesh/vertex.h"
 
 #define GLM_FORCE_RADIANS           // Ensure GLM uses radians
@@ -15,6 +16,7 @@ namespace Kinesis
     {
         // --- Module Variables ---
     private:
+        Mesh::Mesh mesh;
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory; // Use extern
         uint32_t vertexCount; 
@@ -40,6 +42,14 @@ namespace Kinesis
          * @param vertices The vertex data to initialize the model with.
          */
         Model(const std::vector<Mesh::Vertex> &vertices);
+        
+        /**
+         * @brief Initializes the model from an .obj file.
+         * (Currently just calls createVertexBuffers).
+         * @param path The folder containing the file.
+         * @param input_file The name of the .obj file.
+         */
+        Model(const std::string &path, const std::string& input_file);
 
         /**
          * @brief Cleans up Vulkan resources (vertex buffer and memory) used by the model.

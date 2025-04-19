@@ -11,6 +11,8 @@ file(GLOB GAME_SRCS ${PROJECT_SOURCE_DIR}/gamefiles/*.cpp ${PROJECT_SOURCE_DIR}/
 
 #Kinesis SRCs
 file(GLOB KINESIS_SRCS ${PROJECT_SOURCE_DIR}/kinesis/*.cpp ${PROJECT_SOURCE_DIR}/kinesis/*.h)
+file(GLOB MESH_SRCS ${PROJECT_SOURCE_DIR}/kinesis/mesh/*.cpp ${PROJECT_SOURCE_DIR}/kinesis/mesh/*.h)
+file(GLOB RAYTRACER_SRCS ${PROJECT_SOURCE_DIR}/kinesis/raytracer/*.cpp ${PROJECT_SOURCE_DIR}/kinesis/raytracer/*.h)
 include_directories(${PROJECT_SOURCE_DIR}/kinesis/)
 
 #IMGUI SRCs
@@ -31,6 +33,8 @@ add_executable(${my_executable}
     MACOSX_BUNDLE
     ${GAME_SRCS}
     ${KINESIS_SRCS}
+    ${MESH_SRCS}
+    #${RAYTRACER_SRCS}
     ${IMGUI_SRCS}
     )
 

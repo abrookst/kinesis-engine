@@ -7,8 +7,8 @@
 
 #include "ray.h"
 #include "hit.h"
-#include "./spectral_distribution.h"
-#include "./mesh/mesh.h"
+#include "spectral_distribution.h"
+#include "mesh/mesh.h"
 
 using namespace Kinesis::Raytracing::Spectra;
 

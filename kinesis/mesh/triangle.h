@@ -3,9 +3,11 @@
 
 #include "mesh/edge.h"
 #include "mesh/vertex.h"
-#include "./raytracer/hit.h"
-#include "./raytracer/ray.h"
 
+namespace Kinesis::Raytracing {
+	class Hit;
+	class Ray;
+}
 
 namespace Kinesis::Mesh {
 	class Material;
@@ -36,7 +38,7 @@ namespace Kinesis::Mesh {
 			Kinesis::Mesh::Material* getMaterial() const { return material; }
 
 			float getArea() const;
-			glm::vec3 randomPoint() const;
+			//glm::vec3 randomPoint() const;
 			glm::vec3 computeNormal() const;
 
 			// =========

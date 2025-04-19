@@ -5,10 +5,7 @@
 #include "hash.h"
 #include "material.h"
 
-class ArgParser;
-class Ray;
-class Hit;
-class Camera;
+//class Camera;
 
 namespace Kinesis::Mesh {
 	class Vertex;
@@ -21,18 +18,25 @@ namespace Kinesis::Mesh {
 			// ===============================
 			// CONSTRUCTOR & DESTRUCTOR & LOAD
 			Mesh() { bbox = NULL; }
-			virtual ~Mesh();
-			void Load(ArgParser *_args);
+			~Mesh();
+			void Load(const std::string &path, const std::string& input_file);
 
 			// ========
 			// VERTICES
-			int numVertices() const { return vertices.size(); }
-			Vertex* addVertex(const Kinesis::Math::Vector3 &pos);
+			size_t numVertices() const { return vertices.size(); }
+			Vertex* addVertex(const glm::vec3 &pos);
 			// look up vertex by index from original .obj file
 			Vertex* getVertex(int i) const {
 				assert (i >= 0 && i < numVertices());
 				return vertices[i];
 			}
+			std::vector<Vertex> getVertices() { 
+				std::vector<Vertex> verticesCopy;
+				for (int i = 0; i < numVertices(); i++) {
+					verticesCopy.push_back(*vertices[i]);
+				}
+				return verticesCopy;
+			 }
 			// this creates a relationship between 3 vertices (2 parents, 1 child)
 			void setParentsChild(Vertex *p1, Vertex *p2, Vertex *child);
 			// this accessor will find a child vertex (if it exists) when given
@@ -41,7 +45,7 @@ namespace Kinesis::Mesh {
 
 			// =====
 			// EDGES
-			int numEdges() const { return edges.size(); }
+			size_t numEdges() const { return edges.size(); }
 			// this efficiently looks for an edge with the given vertices, using a hash table
 			Edge* getEdge(Vertex *a, Vertex *b) const;
 			const edgeshashtype& getEdges() const { return edges; }
@@ -52,7 +56,7 @@ namespace Kinesis::Mesh {
 
 			// ===============
 			// OTHER ACCESSORS
-			int numTriangles() const { return triangles.size(); }
+			size_t numTriangles() const { return triangles.size(); }
 			BoundingBox* getBoundingBox() const { return bbox; }
 
 		private:
@@ -61,11 +65,9 @@ namespace Kinesis::Mesh {
 
 			// ==============
 			// REPRESENTATION
-			ArgParser *args;
 		public:
 			std::vector<Material*> materials;
-			Kinesis::Math::Vector3 background_color;
-			Camera *camera;
+			glm::vec3 background_color;
 		private:
 			// the bounding box of all rasterized faces in the scene
 			BoundingBox *bbox;

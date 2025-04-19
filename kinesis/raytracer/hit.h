@@ -5,8 +5,7 @@
 #include <ostream>
 
 #include "ray.h"
-#include "./spectral_distribution.h"
-#include "./mesh/material.h"
+#include "mesh/material.h"
 
 class Material;
 

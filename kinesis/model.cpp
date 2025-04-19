@@ -1,6 +1,6 @@
-#include "model.h"
 #include <cassert>
 #include <cstring>
+#include "model.h"
 
 namespace Kinesis {
 

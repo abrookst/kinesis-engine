@@ -16,7 +16,7 @@ namespace Kinesis
     {
         // --- Module Variables ---
     private:
-        Kinesis::Mesh::Mesh mesh;
+        Mesh::Mesh mesh;
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory; // Use extern
         uint32_t vertexCount; 

@@ -39,8 +39,8 @@ namespace Kinesis::Mesh {
 	// =======================================================================
 
 	Vertex* Mesh::addVertex(const glm::vec3 &position) {
-		int index = numVertices();
-		vertices.push_back(new Vertex(index,position));
+		size_t index = numVertices();
+		vertices.push_back(new Vertex((int)index,position));
 		// extend the bounding box to include this point
 		if (bbox == NULL) 
 			bbox = new BoundingBox(position,position);
@@ -143,7 +143,6 @@ namespace Kinesis::Mesh {
 
 		std::string token;
 		Material *active_material = NULL;
-		camera = NULL;
 		background_color = glm::vec3(1,1,1);
 
 		while (objfile >> token) {
@@ -155,7 +154,7 @@ namespace Kinesis::Mesh {
 				assert (numVertices() >= 1);
 				float s,t;
 				objfile >> s >> t;
-				getVertex(numVertices()-1)->setTextureCoordinates(s,t);
+				getVertex((int)numVertices()-1)->setTextureCoordinates(s,t);
 			} else if (token == "f") {
 				int a,b,c,d;
 				objfile >> a >> b >> c >> d;

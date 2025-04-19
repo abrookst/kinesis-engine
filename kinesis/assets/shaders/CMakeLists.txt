@@ -53,7 +53,7 @@ function(compile_shader shader)
     add_custom_command(
             OUTPUT ${SPIRV_OUTPUT}
             #COMMAND "${GLSLC}" ${shader} -o ${SPIRV_OUTPUT}
-            COMMAND "${GLSLANGVALIDATOR}" -V ${shader} -o ${SPIRV_OUTPUT} --target-env vulkan1.2
+            COMMAND "${GLSLANGVALIDATOR}" -V ${shader} -o ${SPIRV_OUTPUT} --target-env vulkan1.3
             COMMENT "Compiling ${shader} to SPIR-V"
             DEPENDS ${shader} ${GLSL_SHADERS}
             VERBATIM

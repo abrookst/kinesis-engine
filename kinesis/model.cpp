@@ -39,6 +39,11 @@ namespace Kinesis {
     Model::Model(const std::vector<Mesh::Vertex> &vertices){
         createVertexBuffers(vertices);
     }
+      
+    Model::Model(const std::string &path, const std::string& input_file){
+        mesh.Load(path, input_file);
+        createVertexBuffers(mesh.getVertices());
+    }
 
     Model::~Model(){
         vkDestroyBuffer(g_Device, vertexBuffer, nullptr);

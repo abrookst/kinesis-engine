@@ -38,7 +38,7 @@ namespace Kinesis::Mesh {
 	// MODIFIERS:   ADD & REMOVE
 	// =======================================================================
 
-	Vertex* Mesh::addVertex(const Kinesis::Math::Vector3 &position) {
+	Vertex* Mesh::addVertex(const glm::vec3 &position) {
 		int index = numVertices();
 		vertices.push_back(new Vertex(index,position));
 		// extend the bounding box to include this point
@@ -82,9 +82,9 @@ namespace Kinesis::Mesh {
 		triangles.push_back(t);
 
 		// if it's a light, add it to that list too
-		if ((material->getEmittedColor()).Length() > 0) {
-			triangles.push_back(t);
-		}
+		//if ((material->getEmittedColor()).Length() > 0) {
+		//	triangles.push_back(t);
+		//}
 	}
 
 	void Mesh::removeTriangleEdges(Triangle *t) {
@@ -131,10 +131,9 @@ namespace Kinesis::Mesh {
 	// the load function parses our (non-standard) extension of very simple .obj files
 	// ===============================================================================
 
-	void Mesh::Load(ArgParser *_args) {
-		args = _args;
+	void Mesh::Load(const std::string &path, const std::string& input_file) {
 
-		std::string file = args->path+'/'+args->input_file;
+		std::string file = path+'/'+input_file;
 
 		std::ifstream objfile(file.c_str());
 		if (!objfile.good()) {
@@ -145,13 +144,13 @@ namespace Kinesis::Mesh {
 		std::string token;
 		Material *active_material = NULL;
 		camera = NULL;
-		background_color = Kinesis::Vector3(1,1,1);
+		background_color = glm::vec3(1,1,1);
 
 		while (objfile >> token) {
 			if (token == "v") {
 				float x,y,z;
 				objfile >> x >> y >> z;
-				addVertex(Kinesis::Math::Vector3(x,y,z));
+				addVertex(glm::vec3(x,y,z));
 			} else if (token == "vt") {
 				assert (numVertices() >= 1);
 				float s,t;
@@ -173,13 +172,13 @@ namespace Kinesis::Mesh {
 			} else if (token == "background_color") {
 				float r,g,b;
 				objfile >> r >> g >> b;
-				background_color = Kinesis::Math::Vector3(r,g,b);
-			} else if (token == "PerspectiveCamera") {
-				camera = new PerspectiveCamera();
-				objfile >> *(PerspectiveCamera*)camera;
-			} else if (token == "OrthographicCamera") {
-				camera = new OrthographicCamera();
-				objfile >> *(OrthographicCamera*)camera;
+				background_color = glm::vec3(r,g,b);
+			//} else if (token == "PerspectiveCamera") {
+			//	camera = new PerspectiveCamera();
+			//	objfile >> *(PerspectiveCamera*)camera;
+			//} else if (token == "OrthographicCamera") {
+			//	camera = new OrthographicCamera();
+			//	objfile >> *(OrthographicCamera*)camera;
 			} else if (token == "m") {
 				// this is not standard .obj format!!
 				// materials
@@ -190,22 +189,22 @@ namespace Kinesis::Mesh {
 			} else if (token == "material") {
 				// this is not standard .obj format!!
 				std::string texture_file = "";
-				Kinesis::Math::Vector3 diffuse(0,0,0);
+				glm::vec3 diffuse(0,0,0);
 				float r,g,b;
 				objfile >> token;
 				if (token == "diffuse") {
 					objfile >> r >> g >> b;
-					diffuse = Kinesis::Math::Vector3(r,g,b);
+					diffuse = glm::vec3(r,g,b);
 				} else {
 					assert (token == "texture_file");
 					objfile >> texture_file;
 					// prepend the directory name
-					texture_file = args->path + '/' + texture_file;
+					texture_file = path+'/'+texture_file;
 				}
-				Kinesis::Math::Vector3 reflective,transmissive,emitted;
+				glm::vec3 reflective,transmissive,emitted;
 				objfile >> token >> r >> g >> b;
 				assert (token == "reflective");
-				reflective = Kinesis::Math::Vector3(r,g,b);
+				reflective = glm::vec3(r,g,b);
 				float roughness = 0;
 				objfile >> token;
 				if (token == "roughness") {
@@ -215,16 +214,16 @@ namespace Kinesis::Mesh {
 				double indexOfRefraction = 1;
 				if (token == "transmissive") {
 					objfile >> r >> g >> b >> token;
-					transmissive = Kinesis::Math::Vector3(r,g,b);
+					transmissive = glm::vec3(r,g,b);
 					if (token == "index") {
 						objfile >> indexOfRefraction >> token;
 					}
 				}
 				assert (token == "emitted");
 				objfile >> r >> g >> b;
-				emitted = Kinesis::Math::Vector3(r,g,b);
+				emitted = glm::vec3(r,g,b);
 				// materials.push_back(new Material(texture_file,diffuse,reflective,emitted,roughness));
-				materials.push_back(new Kinesis::Mesh::Material(texture_file,diffuse,reflective,transmissive,emitted,roughness,indexOfRefraction));
+				//materials.push_back(new Kinesis::Mesh::Material(texture_file,diffuse,reflective,transmissive,emitted,roughness,indexOfRefraction));
 			} else {
 				std::cout << "UNKNOWN TOKEN " << token << std::endl;
 				exit(0);
@@ -232,16 +231,18 @@ namespace Kinesis::Mesh {
 		}
 		std::cout << " mesh loaded: " << numTriangles() << " triangles and " << numEdges() << " edges." << std::endl;
 
+		/*
 		if (camera == NULL) {
 			std::cout << "NO CAMERA PROVIDED, CREATING DEFAULT CAMERA" << std::endl;
 			// if not initialized, position a perspective camera and scale it so it fits in the window
 			assert (bbox != NULL);
-			Kinesis::Math::Vector3 point_of_interest; bbox->getCenter(point_of_interest);
+			glm::vec3 point_of_interest; bbox->getCenter(point_of_interest);
 			float max_dim = bbox->maxDim();
-			Kinesis::Math::Vector3 camera_position = point_of_interest + Vector3(0,0,4*max_dim);
-			Kinesis::Math::Vector3 up = Vector3(0,1,0);
+			glm::vec3 camera_position = point_of_interest + Vector3(0,0,4*max_dim);
+			glm::vec3 up = Vector3(0,1,0);
 			camera = new PerspectiveCamera(camera_position, point_of_interest, up, 20 * M_PI/180.0);    
 		}
+		*/
 	}
 }
 

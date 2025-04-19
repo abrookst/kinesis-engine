@@ -22,17 +22,24 @@ namespace Kinesis::Mesh {
 			// CONSTRUCTOR & DESTRUCTOR & LOAD
 			Mesh() { bbox = NULL; }
 			virtual ~Mesh();
-			void Load(ArgParser *_args);
+			void Load(const std::string &path, const std::string& input_file);
 
 			// ========
 			// VERTICES
 			int numVertices() const { return vertices.size(); }
-			Vertex* addVertex(const Kinesis::Math::Vector3 &pos);
+			Vertex* addVertex(const glm::vec3 &pos);
 			// look up vertex by index from original .obj file
 			Vertex* getVertex(int i) const {
 				assert (i >= 0 && i < numVertices());
 				return vertices[i];
 			}
+			std::vector<Vertex> getVertices() { 
+				std::vector<Vertex> verticesCopy;
+				for (int i = 0; i < numVertices(); i++) {
+					verticesCopy.push_back(*vertices[i]);
+				}
+				return verticesCopy;
+			 }
 			// this creates a relationship between 3 vertices (2 parents, 1 child)
 			void setParentsChild(Vertex *p1, Vertex *p2, Vertex *child);
 			// this accessor will find a child vertex (if it exists) when given
@@ -64,7 +71,7 @@ namespace Kinesis::Mesh {
 			ArgParser *args;
 		public:
 			std::vector<Material*> materials;
-			Kinesis::Math::Vector3 background_color;
+			glm::vec3 background_color;
 			Camera *camera;
 		private:
 			// the bounding box of all rasterized faces in the scene

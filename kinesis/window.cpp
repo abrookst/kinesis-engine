@@ -90,8 +90,20 @@ namespace Kinesis::Window
 
         // Create Vulkan Instance
         {
+            // --- ADD THIS ---
+            VkApplicationInfo appInfo{}; // Create the struct
+            appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+            appInfo.pApplicationName = "Kinesis Engine";           // Example name
+            appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0); // Example version
+            appInfo.pEngineName = "Kinesis";                       // Example engine name
+            appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);      // Example engine version
+            appInfo.apiVersion = VK_API_VERSION_1_2;               // Set the desired Vulkan API version (e.g., Vulkan 1.2)
+                                                                   // Or VK_API_VERSION_1_0, VK_API_VERSION_1_1, VK_API_VERSION_1_3 etc.
+            // --- END ADD ---
+
             VkInstanceCreateInfo create_info = {};
             create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+            create_info.pApplicationInfo = &appInfo; // <<< Set pApplicationInfo here
 
             // Enumerate available extensions
             uint32_t properties_count;
@@ -149,7 +161,7 @@ namespace Kinesis::Window
             // Create Vulkan Instance
             create_info.enabledExtensionCount = (uint32_t)instance_extensions.Size;
             create_info.ppEnabledExtensionNames = instance_extensions.Data;
-            err = vkCreateInstance(&create_info, g_Allocator, &g_Instance);
+            err = vkCreateInstance(&create_info, g_Allocator, &g_Instance); // Pass the modified create_info
             check_vk_result(err);
 #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
             volkLoadInstance(g_Instance);
@@ -279,7 +291,6 @@ namespace Kinesis::Window
                 {
                     all_extensions_available = false;
                     std::cout << "Raytracing extension missing on " << props.deviceName << ": " << ext_name << "\n";
-                    break;
                 }
             }
 
@@ -391,7 +402,7 @@ namespace Kinesis::Window
             queue_info[0].queueCount = 1;
             queue_info[0].pQueuePriorities = queue_priority;
 
-            VkPhysicalDeviceFeatures deviceFeatures = {};
+            VkPhysicalDeviceFeatures deviceFeatures = {}; // Basic features, we enable specific ones via pNext
 
             VkDeviceCreateInfo create_info = {};
             create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -399,20 +410,47 @@ namespace Kinesis::Window
             create_info.pQueueCreateInfos = queue_info;
             create_info.enabledExtensionCount = (uint32_t)device_extensions.Size;
             create_info.ppEnabledExtensionNames = device_extensions.Data;
-            create_info.pEnabledFeatures = &deviceFeatures;
+            create_info.pEnabledFeatures = &deviceFeatures; // Link basic features here
 
             // Chain raytracing features if available
             if (Kinesis::GUI::raytracing_available)
             {
-                enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-                enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-                enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+                // Query the actual supported features again before enabling them
+                VkPhysicalDeviceAccelerationStructureFeaturesKHR supportedAccelFeatures{};
+                supportedAccelFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+                VkPhysicalDeviceRayTracingPipelineFeaturesKHR supportedRtPipelineFeatures{};
+                supportedRtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+                supportedAccelFeatures.pNext = &supportedRtPipelineFeatures;
+                VkPhysicalDeviceBufferDeviceAddressFeatures supportedBufferAddrFeatures{};
+                supportedBufferAddrFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+                supportedRtPipelineFeatures.pNext = &supportedBufferAddrFeatures;
 
-                // Chain the features together
+                VkPhysicalDeviceFeatures2 supportedFeatures2{};
+                supportedFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+                supportedFeatures2.pNext = &supportedAccelFeatures;
+                vkGetPhysicalDeviceFeatures2(g_PhysicalDevice, &supportedFeatures2);
+
+                // Initialize the enabled features structs
+                enabledAccelerationStructureFeatures = {}; // Zero-initialize
+                enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+                enabledAccelerationStructureFeatures.accelerationStructure = supportedAccelFeatures.accelerationStructure; // Enable if supported
+
+                enabledRayTracingPipelineFeatures = {}; // Zero-initialize
+                enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+                enabledRayTracingPipelineFeatures.rayTracingPipeline = supportedRtPipelineFeatures.rayTracingPipeline; // Enable if supported
+
+                enabledBufferDeviceAddressFeatures = {}; // Zero-initialize
+                enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+                enabledBufferDeviceAddressFeatures.bufferDeviceAddress = supportedBufferAddrFeatures.bufferDeviceAddress; // Enable if supported
+
+                // Chain the *enabled* features structs
                 enabledAccelerationStructureFeatures.pNext = &enabledRayTracingPipelineFeatures;
                 enabledRayTracingPipelineFeatures.pNext = &enabledBufferDeviceAddressFeatures;
 
+                // Link the chain to the device create info's pNext
                 create_info.pNext = &enabledAccelerationStructureFeatures;
+
+                std::cout << "Chaining Raytracing features for logical device creation." << std::endl;
             }
 
             err = vkCreateDevice(g_PhysicalDevice, &create_info, g_Allocator, &g_Device);
@@ -430,14 +468,16 @@ namespace Kinesis::Window
             // Add types needed for raytracing if available
             if (Kinesis::GUI::raytracing_available)
             {
-                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10});
-                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000});
+                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10}); // For TLAS/BLAS
+                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000});           // For potential storage buffers in RT shaders
+                std::cout << "Adding Raytracing descriptor types to the pool." << std::endl;
             }
 
             VkDescriptorPoolCreateInfo pool_info = {};
             pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+            // Enable VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT if needed for bindless textures etc.
             pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 100 : 0);
+            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 110 : 0); // Increase maxSets slightly for RT descriptors
             pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
             pool_info.pPoolSizes = pool_sizes.data();
             err = vkCreateDescriptorPool(g_Device, &pool_info, g_Allocator, &g_DescriptorPool);

@@ -81,20 +81,18 @@ namespace Kinesis::Window
         return false;
     }
 
-    // --- SetupVulkan ---
-    // This function seems correct for setting up Instance, PhysicalDevice, Device, Queue, DescriptorPool.
     void SetupVulkan(ImVector<const char *> instance_extensions)
     {
         VkResult err;
-#ifdef IMGUI_IMPL_VULKAN_USE_VOLK
+    #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
         volkInitialize();
-#endif
-
+    #endif
+    
         // Create Vulkan Instance
         {
             VkInstanceCreateInfo create_info = {};
             create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-
+    
             // Enumerate available extensions
             uint32_t properties_count;
             ImVector<VkExtensionProperties> properties;
@@ -102,26 +100,20 @@ namespace Kinesis::Window
             properties.resize(properties_count);
             err = vkEnumerateInstanceExtensionProperties(nullptr, &properties_count, properties.Data);
             check_vk_result(err);
-
-            // --- Raytracing Instance Extension Check --- START ---
-            // Check for necessary instance extensions first (some RT extensions are instance-level)
-            // Although the core RT extensions are device-level, some dependencies might be instance level.
-            // Let's assume for now the primary checks are device-level based on the original code structure.
-            // --- Raytracing Instance Extension Check --- END ---
-
+    
             // Enable required extensions
             if (IsExtensionAvailable(properties, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME))
                 instance_extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+    #ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
             if (IsExtensionAvailable(properties, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME))
             {
                 instance_extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
                 create_info.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
             }
-#endif
-
+    #endif
+    
             // Enabling validation layers
-#ifdef APP_USE_VULKAN_DEBUG_REPORT
+    #ifdef APP_USE_VULKAN_DEBUG_REPORT
             const char *layers[] = {"VK_LAYER_KHRONOS_validation"};
             // Check layer support before enabling (good practice)
             uint32_t layerCount;
@@ -137,7 +129,7 @@ namespace Kinesis::Window
                     break;
                 }
             }
-
+    
             if (layerFound)
             {
                 create_info.enabledLayerCount = 1;
@@ -150,25 +142,25 @@ namespace Kinesis::Window
                 std::cerr << "Warning: Validation layer VK_LAYER_KHRONOS_validation not found." << std::endl;
                 create_info.enabledLayerCount = 0;
             }
-#else
-            create_info.enabledLayerCount = 0; // Ensure layers are off if debug report is off
-#endif
-
+    #else
+            create_info.enabledLayerCount = 0;
+    #endif
+    
             // Create Vulkan Instance
             create_info.enabledExtensionCount = (uint32_t)instance_extensions.Size;
             create_info.ppEnabledExtensionNames = instance_extensions.Data;
             err = vkCreateInstance(&create_info, g_Allocator, &g_Instance);
             check_vk_result(err);
-#ifdef IMGUI_IMPL_VULKAN_USE_VOLK
+    #ifdef IMGUI_IMPL_VULKAN_USE_VOLK
             volkLoadInstance(g_Instance);
-#endif
-
+    #endif
+    
             // Setup the debug report callback
-#ifdef APP_USE_VULKAN_DEBUG_REPORT
+    #ifdef APP_USE_VULKAN_DEBUG_REPORT
             if (layerFound)
-            { // Only setup callback if layers were enabled
+            {
                 auto f_vkCreateDebugReportCallbackEXT = (PFN_vkCreateDebugReportCallbackEXT)vkGetInstanceProcAddr(g_Instance, "vkCreateDebugReportCallbackEXT");
-                IM_ASSERT(f_vkCreateDebugReportCallbackEXT != nullptr); // Use IM_ASSERT for ImGui context consistency
+                IM_ASSERT(f_vkCreateDebugReportCallbackEXT != nullptr);
                 VkDebugReportCallbackCreateInfoEXT debug_report_ci = {};
                 debug_report_ci.sType = VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT;
                 debug_report_ci.flags = VK_DEBUG_REPORT_ERROR_BIT_EXT | VK_DEBUG_REPORT_WARNING_BIT_EXT | VK_DEBUG_REPORT_PERFORMANCE_WARNING_BIT_EXT;
@@ -177,160 +169,212 @@ namespace Kinesis::Window
                 err = f_vkCreateDebugReportCallbackEXT(g_Instance, &debug_report_ci, g_Allocator, &g_DebugReport);
                 check_vk_result(err);
             }
-#endif
+    #endif
         }
-
-        // Select Physical Device (GPU)
-        g_PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(g_Instance);
-        if (g_PhysicalDevice == VK_NULL_HANDLE)
+    
+        // Enumerate all physical devices
+        uint32_t gpu_count = 0;
+        vkEnumeratePhysicalDevices(g_Instance, &gpu_count, nullptr);
+        if (gpu_count == 0)
         {
-            throw std::runtime_error("Failed to find suitable GPU!");
+            throw std::runtime_error("No Vulkan-compatible GPUs found!");
         }
-
-        // --- Check for Raytracing Support --- START ---
-        // Enumerate device extensions
-        uint32_t device_properties_count;
-        ImVector<VkExtensionProperties> device_properties;
-        vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &device_properties_count, nullptr);
-        device_properties.resize(device_properties_count);
-        vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &device_properties_count, device_properties.Data);
-
+        std::vector<VkPhysicalDevice> gpus(gpu_count);
+        vkEnumeratePhysicalDevices(g_Instance, &gpu_count, gpus.data());
+    
         // Define required ray tracing extensions
         const std::vector<const char*> required_rt_extensions = {
             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
             VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
             VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
-            // Dependencies that might be needed:
             VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
             VK_KHR_SPIRV_1_4_EXTENSION_NAME,
             VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME
         };
-
-        // Check if all required extensions are available
-        Kinesis::GUI::raytracing_available = true; // Assume available initially
-        for (const char* ext_name : required_rt_extensions) {
-            if (!IsExtensionAvailable(device_properties, ext_name)) {
-                Kinesis::GUI::raytracing_available = false;
-                std::cout << "Raytracing Skipped: Missing required device extension: " << ext_name << std::endl;
-                break; // No need to check further if one is missing
+    
+        // Try to find a GPU with raytracing support
+        bool found_rt_gpu = false;
+        for (const auto& gpu : gpus)
+        {
+            // Check device extensions
+            uint32_t device_properties_count;
+            vkEnumerateDeviceExtensionProperties(gpu, nullptr, &device_properties_count, nullptr);
+            std::vector<VkExtensionProperties> device_properties(device_properties_count);
+            vkEnumerateDeviceExtensionProperties(gpu, nullptr, &device_properties_count, device_properties.data());
+    
+            // Check if all required extensions are available
+            bool all_extensions_available = true;
+            for (const char* ext_name : required_rt_extensions)
+            {
+                bool extension_found = false;
+                for (const auto& prop : device_properties)
+                {
+                    if (strcmp(ext_name, prop.extensionName) == 0)
+                    {
+                        extension_found = true;
+                        break;
+                    }
+                }
+                if (!extension_found)
+                {
+                    all_extensions_available = false;
+                    break;
+                }
+            }
+    
+            if (!all_extensions_available)
+            {
+                continue;
+            }
+    
+            // Check for required features
+            VkPhysicalDeviceAccelerationStructureFeaturesKHR accel_features{};
+            accel_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    
+            VkPhysicalDeviceRayTracingPipelineFeaturesKHR rt_pipeline_features{};
+            rt_pipeline_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+            accel_features.pNext = &rt_pipeline_features;
+    
+            VkPhysicalDeviceBufferDeviceAddressFeatures buffer_addr_features{};
+            buffer_addr_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+            rt_pipeline_features.pNext = &buffer_addr_features;
+    
+            VkPhysicalDeviceFeatures2 device_features2{};
+            device_features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+            device_features2.pNext = &accel_features;
+    
+            vkGetPhysicalDeviceFeatures2(gpu, &device_features2);
+    
+            if (accel_features.accelerationStructure && 
+                rt_pipeline_features.rayTracingPipeline && 
+                buffer_addr_features.bufferDeviceAddress)
+            {
+                g_PhysicalDevice = gpu;
+                found_rt_gpu = true;
+                Kinesis::GUI::raytracing_available = true;
+                std::cout << "Found GPU with raytracing support: ";
+    
+                // Get and print GPU name
+                VkPhysicalDeviceProperties props;
+                vkGetPhysicalDeviceProperties(gpu, &props);
+                std::cout << props.deviceName << std::endl;
+    
+                // Store the features we'll need to enable
+                enabledAccelerationStructureFeatures = accel_features;
+                enabledRayTracingPipelineFeatures = rt_pipeline_features;
+                enabledBufferDeviceAddressFeatures = buffer_addr_features;
+                break;
             }
         }
-
-        // If extensions are available, query for ray tracing features
-        if (Kinesis::GUI::raytracing_available) {
-            // Initialize feature structures with sType and pNext chain
-            enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-
-            enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-            enabledAccelerationStructureFeatures.pNext = &enabledRayTracingPipelineFeatures; // Chain features
-
-            enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
-            enabledRayTracingPipelineFeatures.pNext = &enabledBufferDeviceAddressFeatures; // Chain features
-
-            // Add other feature structs like VkPhysicalDeviceDescriptorIndexingFeaturesEXT if needed and chain them here
-
-            VkPhysicalDeviceFeatures2 deviceFeatures2{};
-            deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-            deviceFeatures2.pNext = &enabledAccelerationStructureFeatures; // Point to the head of the features chain
-
-            vkGetPhysicalDeviceFeatures2(g_PhysicalDevice, &deviceFeatures2);
-
-            // Check if the core features are supported by the device
-            if (!enabledAccelerationStructureFeatures.accelerationStructure ||
-                !enabledRayTracingPipelineFeatures.rayTracingPipeline ||
-                !enabledBufferDeviceAddressFeatures.bufferDeviceAddress) {
-                Kinesis::GUI::raytracing_available = false;
-                std::cout << "Raytracing Skipped: Required features not supported by the device." << std::endl;
-            } else {
-                 std::cout << "Raytracing Supported and Enabled!" << std::endl;
+    
+        // If no GPU with raytracing support was found, fall back to any suitable GPU
+        if (!found_rt_gpu)
+        {
+            Kinesis::GUI::raytracing_available = false;
+            std::cout << "No GPU with raytracing support found. Falling back to basic Vulkan support." << std::endl;
+            
+            // Select first suitable GPU (ImGui's default selection logic)
+            g_PhysicalDevice = ImGui_ImplVulkanH_SelectPhysicalDevice(g_Instance);
+            if (g_PhysicalDevice == VK_NULL_HANDLE)
+            {
+                throw std::runtime_error("Failed to find suitable GPU!");
             }
+    
+            // Print selected GPU name
+            VkPhysicalDeviceProperties props;
+            vkGetPhysicalDeviceProperties(g_PhysicalDevice, &props);
+            std::cout << "Selected GPU: " << props.deviceName << std::endl;
         }
-        // --- Check for Raytracing Support --- END ---
-
-
+    
         // Select graphics queue family
-        // Note: Ensure this finds a queue that supports graphics AND presentation (WSI).
         g_QueueFamily = ImGui_ImplVulkanH_SelectQueueFamilyIndex(g_PhysicalDevice);
         if (g_QueueFamily == (uint32_t)-1)
         {
             throw std::runtime_error("Failed to find suitable queue family!");
         }
-
-        // Create Logical Device (with 1 queue)
+    
+        // Create Logical Device
         {
-            ImVector<const char *> device_extensions;
+            ImVector<const char*> device_extensions;
             device_extensions.push_back("VK_KHR_swapchain"); // Swapchain extension is mandatory
-
-#ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
-            if (IsExtensionAvailable(device_properties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME)) // Use already enumerated properties
+    
+    #ifdef VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME
+            // Check for and enable portability subset if available
+            uint32_t device_properties_count;
+            vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &device_properties_count, nullptr);
+            std::vector<VkExtensionProperties> device_properties(device_properties_count);
+            vkEnumerateDeviceExtensionProperties(g_PhysicalDevice, nullptr, &device_properties_count, device_properties.data());
+            
+            if (IsExtensionAvailable(device_properties, VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME))
                 device_extensions.push_back(VK_KHR_PORTABILITY_SUBSET_EXTENSION_NAME);
-#endif
-            // --- Add Raytracing Device Extensions if Available ---
+    #endif
+    
+            // Add raytracing extensions if available
             if (Kinesis::GUI::raytracing_available)
             {
-                for (const char* ext_name : required_rt_extensions) {
-                     // We already checked availability, so just add them
+                for (const char* ext_name : required_rt_extensions)
+                {
                     device_extensions.push_back(ext_name);
                 }
-                 std::cout << "Enabling Raytracing Device Extensions..." << std::endl;
+                std::cout << "Enabling raytracing device extensions..." << std::endl;
             }
-            // ---
-
+    
             const float queue_priority[] = {1.0f};
             VkDeviceQueueCreateInfo queue_info[1] = {};
             queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
             queue_info[0].queueFamilyIndex = g_QueueFamily;
             queue_info[0].queueCount = 1;
             queue_info[0].pQueuePriorities = queue_priority;
-
-            // Base device features (enable features needed by rasterization pipeline)
+    
             VkPhysicalDeviceFeatures deviceFeatures = {};
-            // Example: deviceFeatures.samplerAnisotropy = VK_TRUE; // Enable if needed
-
+    
             VkDeviceCreateInfo create_info = {};
             create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
             create_info.queueCreateInfoCount = sizeof(queue_info) / sizeof(queue_info[0]);
             create_info.pQueueCreateInfos = queue_info;
             create_info.enabledExtensionCount = (uint32_t)device_extensions.Size;
             create_info.ppEnabledExtensionNames = device_extensions.Data;
-            create_info.pEnabledFeatures = &deviceFeatures; // Base features for rasterization
-
-            // --- Chain Raytracing Features if Available ---
-            void* pNextChain = nullptr; // Pointer to the start of the feature chain
+            create_info.pEnabledFeatures = &deviceFeatures;
+    
+            // Chain raytracing features if available
             if (Kinesis::GUI::raytracing_available)
             {
-                // The feature structs (enabledAccelerationStructureFeatures, etc.) are already populated
-                // from vkGetPhysicalDeviceFeatures2 earlier. We just need to point pNext to them.
-                create_info.pNext = &enabledAccelerationStructureFeatures; // Point to the head of the RT feature chain
-                std::cout << "Linking Raytracing Features to Device Creation..." << std::endl;
+                enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+                enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+                enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+                
+                // Chain the features together
+                enabledAccelerationStructureFeatures.pNext = &enabledRayTracingPipelineFeatures;
+                enabledRayTracingPipelineFeatures.pNext = &enabledBufferDeviceAddressFeatures;
+                
+                create_info.pNext = &enabledAccelerationStructureFeatures;
             }
-            // ---
-
+    
             err = vkCreateDevice(g_PhysicalDevice, &create_info, g_Allocator, &g_Device);
             check_vk_result(err);
             vkGetDeviceQueue(g_Device, g_QueueFamily, 0, &g_Queue);
         }
-
+    
         // Create Descriptor Pool
-        // Increased pool sizes and added types potentially needed for raytracing
         {
             std::vector<VkDescriptorPoolSize> pool_sizes =
-                {
-                    {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-                    {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000}
-                };
+            {
+                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+                {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000}
+            };
+    
             // Add types needed for raytracing if available
-             if (Kinesis::GUI::raytracing_available) {
-                 pool_sizes.push_back({ VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10 }); // Example size
-                 pool_sizes.push_back({ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 }); // Often used for vertex/index/material data in RT
-                 // Add other types like storage image if needed
+            if (Kinesis::GUI::raytracing_available)
+            {
+                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10});
+                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000});
             }
-
+    
             VkDescriptorPoolCreateInfo pool_info = {};
             pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-            pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT; // UPDATE_AFTER_BIND might be needed for descriptor indexing
-            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 100 : 0); // Increase max sets if RT is enabled
+            pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
+            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 100 : 0);
             pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
             pool_info.pPoolSizes = pool_sizes.data();
             err = vkCreateDescriptorPool(g_Device, &pool_info, g_Allocator, &g_DescriptorPool);

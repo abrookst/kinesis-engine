@@ -8,7 +8,8 @@ find_program(GLSLANGVALIDATOR glslangValidator HINTS
     /usr/bin 
     /usr/local/bin 
     $ENV{VULKAN_SDK}/Bin/ 
-    $ENV{VULKAN_SDK}/Bin32/)
+    $ENV{VULKAN_SDK}/Bin32/
+)
 
 #if (NOT GLSLC)
 #    message(FATAL_ERROR "glslc not found at ${GLSLC}")
@@ -29,6 +30,15 @@ file(GLOB_RECURSE SHADERS CONFIGURE_DEPENDS
         ${SHADER_DIR}/*.tese
 )
 
+file(GLOB_RECURSE RAY_SHADERS CONFIGURE_DEPENDS
+        ${SHADER_DIR}/*.rgen
+        ${SHADER_DIR}/*.rint
+        ${SHADER_DIR}/*.rahit
+        ${SHADER_DIR}/*.rchit
+        ${SHADER_DIR}/*.rmiss
+        #${SHADER_DIR}/*.rcall
+)
+
 file(GLOB_RECURSE GLSL_SHADERS CONFIGURE_DEPENDS
         ${SHADER_DIR}/*.glsl
 )
@@ -43,7 +53,7 @@ function(compile_shader shader)
     add_custom_command(
             OUTPUT ${SPIRV_OUTPUT}
             #COMMAND "${GLSLC}" ${shader} -o ${SPIRV_OUTPUT}
-            COMMAND "${GLSLANGVALIDATOR}" -V ${shader} -o ${SPIRV_OUTPUT}
+            COMMAND "${GLSLANGVALIDATOR}" -V ${shader} -o ${SPIRV_OUTPUT} --target-env vulkan1.2
             COMMENT "Compiling ${shader} to SPIR-V"
             DEPENDS ${shader} ${GLSL_SHADERS}
             VERBATIM
@@ -55,6 +65,10 @@ endfunction()
 
 foreach (SHADER ${SHADERS})
     compile_shader(${SHADER})
+endforeach ()
+
+foreach (RAY_SHADER ${RAY_SHADERS})
+    compile_shader(${RAY_SHADER})
 endforeach ()
 
 add_custom_target(Shaders ALL DEPENDS ${SPIRV_SHADERS})

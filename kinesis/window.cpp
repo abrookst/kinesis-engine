@@ -97,7 +97,7 @@ namespace Kinesis::Window
             appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0); // Example version
             appInfo.pEngineName = "Kinesis";                       // Example engine name
             appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);      // Example engine version
-            appInfo.apiVersion = VK_API_VERSION_1_2;               // Set the desired Vulkan API version (e.g., Vulkan 1.2)
+            appInfo.apiVersion = VK_API_VERSION_1_4;               // Set the desired Vulkan API version (e.g., Vulkan 1.2)
                                                                    // Or VK_API_VERSION_1_0, VK_API_VERSION_1_1, VK_API_VERSION_1_3 etc.
             // --- END ADD ---
 

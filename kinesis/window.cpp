@@ -462,22 +462,28 @@ namespace Kinesis::Window
         {
             std::vector<VkDescriptorPoolSize> pool_sizes =
                 {
+                    // Existing types...
                     {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
-                    {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000}};
-
+                    {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+                    // Add/ensure types for Ray Tracing if available
+                    // Ensure counts are sufficient for your needs!
+                    {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000} // Increase count if needed
+                };
+        
             // Add types needed for raytracing if available
-            if (Kinesis::GUI::raytracing_available)
+            if (Kinesis::GUI::raytracing_available) // Use your flag indicating RT support
             {
                 pool_sizes.push_back({VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10}); // For TLAS/BLAS
-                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000});           // For potential storage buffers in RT shaders
+                pool_sizes.push_back({VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 10});             // For RT output image
+                // Add other types if needed (e.g., more storage buffers)
                 std::cout << "Adding Raytracing descriptor types to the pool." << std::endl;
             }
-
+        
             VkDescriptorPoolCreateInfo pool_info = {};
             pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-            // Enable VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT if needed for bindless textures etc.
             pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT | VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
-            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 110 : 0); // Increase maxSets slightly for RT descriptors
+            // Increase maxSets if needed to account for the new RT descriptor set(s)
+            pool_info.maxSets = 2000 + (Kinesis::GUI::raytracing_available ? 100 : 0); // Example increase
             pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
             pool_info.pPoolSizes = pool_sizes.data();
             err = vkCreateDescriptorPool(g_Device, &pool_info, g_Allocator, &g_DescriptorPool);

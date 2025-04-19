@@ -89,6 +89,7 @@ namespace Kinesis {
             float frameTime = std::chrono::duration<float, std::chrono::seconds::period>(newTime-currentTime).count();
             currentTime = newTime;
             Kinesis::Keyboard::moveInPlaneXZ(frameTime, player);
+
             mainCamera.setViewYXZ(player.transform.translation, player.transform.rotation);
 
             // --- GUI Update ---

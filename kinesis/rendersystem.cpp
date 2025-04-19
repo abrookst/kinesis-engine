@@ -80,13 +80,18 @@ namespace Kinesis{
         // Set the pipeline layout created earlier
         configInfo.pipelineLayout = pipelineLayout;
 
-        // Initialize the pipeline using the shader paths and configuration
-        // Ensure shader paths are correct relative to the executable or use absolute paths/build system handling
+
         try {
              // Make sure the shader paths are correct relative to your build output directory
+            #if __APPLE__
+            Kinesis::Pipeline::initialize("../../../../../../kinesis/assets/shaders/bin/simple_shader.vert.spv", // Example relative path adjustment
+                                          "../../../../../../kinesis/assets/shaders/bin/simple_shader.frag.spv", // Example relative path adjustment
+                                          configInfo);
+            #else
             Kinesis::Pipeline::initialize("../../kinesis/assets/shaders/bin/simple_shader.vert.spv", // Example relative path adjustment
                                           "../../kinesis/assets/shaders/bin/simple_shader.frag.spv", // Example relative path adjustment
                                           configInfo);
+            #endif
         } catch (const std::exception& e) {
              std::cerr << "Pipeline Initialization Failed: " << e.what() << std::endl;
              // You might want to clean up the layout if pipeline creation fails partially
@@ -97,27 +102,22 @@ namespace Kinesis{
              throw; // Re-throw the exception
         }
 
-        // std::cout << "Pipeline created successfully." << std::endl; // Debug message
+
     }
 
-    // Renders game objects using the configured pipeline
-    void RenderSystem::renderGameObjects(VkCommandBuffer commandBuffer){
+    void RenderSystem::renderGameObjects(VkCommandBuffer commandBuffer,  const Camera& camera){
         // Bind the graphics pipeline associated with this render system
         Kinesis::Pipeline::bind(commandBuffer);
 
-        // Iterate through game objects (assuming 'gameObjects' is accessible, e.g., via kinesis.h global)
+        auto projView = camera.getProjection() * camera.getView();
+
         for(GameObject& gObj : gameObjects){
-            // Skip objects without models
             if (gObj.model == nullptr) continue;
+
 
             // Prepare push constant data
             SimplePushConstantData push{};
-            // Note: SimplePushConstantData expects mat2 transform and vec2 offset.
-            // GameObject's transform provides vec3 position/scale and float rotation.
-            // Adjust push constant data structure or GameObject transform accordingly.
-            // Assuming mat2() and Position() provide the needed vec2 data:
-            push.transform = gObj.transform.mat2(); // Assuming mat2() gives the 2x2 transform part
-            push.offset = glm::vec2(gObj.transform.Position().x, gObj.transform.Position().y); // Extract vec2 offset
+            push.transform = projView * gObj.transform.mat4(); // Assuming mat2() gives the 2x2 transform part
             push.color = gObj.color; // Pass color
 
             // Push constants to the pipeline

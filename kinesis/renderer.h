@@ -1,7 +1,7 @@
 #ifndef RENDERER_H
 #define RENDERER_H
 
-#include <Vector>
+#include <vector>
 #include <cassert>
 #include <memory> // Required for std::unique_ptr
 
@@ -27,6 +27,8 @@ namespace Kinesis::Renderer {
     void endFrame();
     void beginSwapChainRenderPass(VkCommandBuffer cmdBuffer);
     void endSwapChainRenderPass(VkCommandBuffer cmdBuffer);
+
+    float getAspectRatio();
 
     /**
      * @brief Rerenders the swapchain given a window resizing.

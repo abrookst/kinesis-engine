@@ -215,6 +215,8 @@ namespace Kinesis::Renderer
         vkCmdSetScissor(cmdBuffer, 0, 1, &scissor);
     }
 
+    float getAspectRatio() { return SwapChain->extentAspectRatio();}
+
     void endSwapChainRenderPass(VkCommandBuffer cmdBuffer)
     {
         assert(isFrameStarted && "No frame to end render pass!");

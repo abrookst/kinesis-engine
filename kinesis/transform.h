@@ -3,69 +3,63 @@
 
 #include <string>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-
-class Transform {
-public:
-    // -----------------------------------------------
-    // CONSTRUCTORS, ASSIGNMENT OPERATOR, & DESTRUCTOR
-    Transform(GameObject* gameObj = nullptr) : position(glm::vec3()),rotation(0),scale(glm::vec3(1)),gameObject(gameObj) {}
-    Transform(const Transform &T, GameObject* gameObj = nullptr) {
-        position = T.position;
-        rotation = T.rotation;
-        scale = T.scale;
-        gameObject = gameObj;
-    }
-    Transform(const glm::vec3 &pos, const float &rot, const glm::vec3 &sc, GameObject* gameObj = nullptr) : position(pos),rotation(rot),scale(sc),gameObject(gameObj) {}
-    const Transform &operator=(const Transform &T) {
-        position = T.position;
-        rotation = T.rotation;
-        scale = T.scale;
-        gameObject = nullptr;
-        return *this;
-    }
-    
-    // ----------------------------
-    // SIMPLE ACCESSORS & MODIFIERS
-    glm::vec3 Position() const { return position; }
-    float Rotation() const { return rotation; }
-    glm::vec3 Scale() const { return scale; }
-
-    void SetPosition(const glm::vec3 &V) { position = V; }
-    void Translate(const glm::vec3 &V) { position += V; }
-    void SetRotation(const float &R) { rotation = R; }
-    void Rotate(const float &R) { rotation *= R; }
-    void SetScale(const glm::vec3 &V) { scale = V; }
-    void ModifyScale(const glm::vec3 &V) { scale = scale * V; }
-
-    glm::mat2 mat2(){
-        const float rot_sin = glm::sin(rotation);
-        const float rot_cos = glm::cos(rotation);
-
-        glm::mat2 rotMTX{{rot_cos, rot_sin}, {-rot_sin, rot_cos}};
-        glm::mat2 scalMTX{{scale.x, 0}, {0,scale.y}};
-        return rotMTX * scalMTX;
-    }
-    
-private:
-    glm::vec3 position;
-    float rotation;
-    glm::vec3 scale;
-    GameObject *gameObject;
-};
-
-			void SetPosition(const Math::Vector3 &V) { position = V; }
-			void Translate(const Math::Vector3 &V) { position += V; }
-			void SetRotation(const Math::Quaternion &Q) { rotation = Q; }
-			void Rotate(const Math::Quaternion &Q) { rotation *= Q; }
-			void SetScale(const Math::Vector3 &V) { scale = V; }
-			void ModifyScale(const Math::Vector3 &V) { scale = scale * V; }
-		private:
-			Math::Vector3 position;
-			Math::Quaternion rotation;
-			Math::Vector3 scale;
-			GameObject *gameObject;
-	};
-
+namespace Kinesis{
+    class Transform {
+        public:
+            // -----------------------------------------------
+            // CONSTRUCTORS, ASSIGNMENT OPERATOR, & DESTRUCTOR
+            Transform() : translation(glm::vec3()),rotation(0),scale(glm::vec3(1)) {}
+            Transform(const Transform &T) {
+                translation = T.translation;
+                rotation = T.rotation;
+                scale = T.scale;
+            }
+            Transform(const glm::vec3 &trans, const float &rot, const glm::vec3 &sc) : translation(trans),rotation(rot),scale(sc) {}
+            const Transform &operator=(const Transform &T) {
+                translation = T.translation;
+                rotation = T.rotation;
+                scale = T.scale;
+                return *this;
+            }
+            
+            // ----------------------------
+            // SIMPLE ACCESSORS & MODIFIERS
+            glm::vec3 translation{};
+            glm::vec3 rotation{};
+            glm::vec3 scale{1.f,1.f,1.f};
+        
+            glm::mat4 mat4(){
+                const float c3 = glm::cos(rotation.z);
+                const float s3 = glm::sin(rotation.z);
+                const float c2 = glm::cos(rotation.x);
+                const float s2 = glm::sin(rotation.x);
+                const float c1 = glm::cos(rotation.y);
+                const float s1 = glm::sin(rotation.y);
+                return glm::mat4{
+                    {
+                        scale.x * (c1 * c3 + s1 * s2 * s3),
+                        scale.x * (c2 * s3),
+                        scale.x * (c1 * s2 * s3 - c3 * s1),
+                        0.0f,
+                    },
+                    {
+                        scale.y * (c3 * s1 * s2 - c1 * s3),
+                        scale.y * (c2 * c3),
+                        scale.y * (c1 * c3 * s2 + s1 * s3),
+                        0.0f,
+                    },
+                    {
+                        scale.z * (c2 * s1),
+                        scale.z * (-s2),
+                        scale.z * (c1 * c2),
+                        0.0f,
+                    },
+                    {translation.x, translation.y, translation.z, 1.0f}};
+            }
+        };
 }
+
+
 #endif // __TRANSFORM_H__

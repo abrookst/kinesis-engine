@@ -55,8 +55,8 @@ namespace Kinesis::Pipeline
         shaderStages[1].pNext = nullptr;
         shaderStages[1].pSpecializationInfo = nullptr;
 
-        auto bindingDescriptions = Vertex::getBindingDescriptions();
-        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+        auto bindingDescriptions = Mesh::Vertex::getBindingDescriptions();
+        auto attributeDescriptions = Mesh::Vertex::getAttributeDescriptions();
         VkPipelineVertexInputStateCreateInfo vertInputInfo{};
         vertInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());

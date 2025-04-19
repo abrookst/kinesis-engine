@@ -4,7 +4,7 @@
 
 namespace Kinesis {
 
-    void Model::createVertexBuffers(const std::vector<Vertex> &vertices){
+    void Model::createVertexBuffers(const std::vector<Mesh::Vertex> &vertices){
         vertexCount = static_cast<uint32_t>(vertices.size());
         assert(vertexCount >= 3 && "Vertex count must be at least 3!" ); 
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertexCount;
@@ -36,6 +36,10 @@ namespace Kinesis {
         vkCmdDraw(commandBuffer, vertexCount, 1, 0, 0); 
     }
 
+    Model::Model(const std::vector<Mesh::Vertex> &vertices){
+        createVertexBuffers(vertices);
+    }
+      
     Model::Model(const std::string &path, const std::string& input_file){
         mesh.Load(path, input_file);
         createVertexBuffers(mesh.getVertices());

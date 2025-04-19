@@ -3,11 +3,14 @@
 #include "GUI.h"
 #include "renderer.h"
 #include "rendersystem.h" // Include RenderSystem header
+#include "camera.h"
+#include "keyboard_controller.h"
 #include <iostream> // For std::cerr
 #include <stdexcept> // For std::exception
 #include <vector>    // For std::vector
 #include <memory>    // For std::shared_ptr
 #include <cassert>   // For assert
+#include <chrono>
 
 
 using namespace Kinesis;
@@ -28,17 +31,16 @@ namespace Kinesis {
     ImGui_ImplVulkanH_Window g_MainWindowData;
     // Application specific objects
     RenderSystem* mainRenderSystem = nullptr;
+    Camera mainCamera = Camera();
+    GameObject player  = GameObject::createGameObject("player");
+    
     std::vector<GameObject> gameObjects = std::vector<GameObject>();
-
+    auto currentTime = std::chrono::high_resolution_clock::now();
 
     void initialize(int width, int height){
         try {
-            // 1. Initialize Window and Core Vulkan (calls Renderer::Initialize internally now)
-            std::cout << "1" << std::endl;
             Kinesis::Window::initialize(width, height);
-            std::cout << "2" << std::endl;
             loadGameObjects();
-            std::cout << "3" << std::endl;
              assert(Kinesis::Renderer::SwapChain != nullptr && "Renderer/SwapChain must be initialized before creating RenderSystem");
             mainRenderSystem = new RenderSystem(); // RenderSystem constructor now calls createPipeline
 
@@ -58,6 +60,7 @@ namespace Kinesis {
     // Main application loop
     bool run()
     {
+        
          // Check if the window should close (e.g., user clicked the close button)
         if(glfwWindowShouldClose(Kinesis::Window::window)){
             // Perform cleanup before exiting
@@ -82,6 +85,11 @@ namespace Kinesis {
         else{
             // --- Input and Event Processing ---
             glfwPollEvents(); // Process window events (input, resize, etc.)
+            auto newTime = std::chrono::high_resolution_clock::now();
+            float frameTime = std::chrono::duration<float, std::chrono::seconds::period>(newTime-currentTime).count();
+            currentTime = newTime;
+            Kinesis::Keyboard::moveInPlaneXZ(frameTime, player);
+            mainCamera.setViewYXZ(player.transform.translation, player.transform.rotation);
 
             // --- GUI Update ---
             Kinesis::GUI::update_imgui(); // Prepare ImGui frame data
@@ -89,10 +97,14 @@ namespace Kinesis {
             // --- Rendering ---
             try {
                  // Start the frame: acquire swapchain image, begin command buffer
-                if(auto commandBuffer = Kinesis::Renderer::beginFrame()){
+                float aspect = Kinesis::Renderer::getAspectRatio();
+                //mainCamera.setOrthographicProjection(-aspect,aspect,-1,1,-1,1);
+                mainCamera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 10.f);
+
+                 if(auto commandBuffer = Kinesis::Renderer::beginFrame()){
                     Kinesis::Renderer::beginSwapChainRenderPass(commandBuffer);
                     if (mainRenderSystem) {
-                        mainRenderSystem->renderGameObjects(commandBuffer);
+                        mainRenderSystem->renderGameObjects(commandBuffer, mainCamera);
                     }
                     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -106,43 +118,76 @@ namespace Kinesis {
         }
     }
 
+    std::unique_ptr<Model> createCubeModel(glm::vec3 offset) {
+        std::vector<Mesh::Vertex> vertices{
+       
+            // left face (white) - Indices 0 to 5
+            Mesh::Vertex(0, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(1, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(2, {-.5f, -.5f,  .5f}, {.9f, .9f, .9f}),
+            // Note: Original vertices list seemed to have duplicates, ensure correct vertices for a cube.
+            // Assuming unique vertices per face corner for simplicity here. Adjust if needed.
+            // Re-using vertex 0, 1, 2 for the second triangle of the left face
+            Mesh::Vertex(3, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}), // Same as 0
+            Mesh::Vertex(4, {-.5f,  .5f, -.5f}, {.9f, .9f, .9f}),
+            Mesh::Vertex(5, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}), // Same as 1
+
+            // right face (yellow) - Indices 6 to 11
+            Mesh::Vertex(6, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(7, {.5f,  .5f,  .5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(8, {.5f, -.5f,  .5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(9, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}), // Same as 6
+            Mesh::Vertex(10,{ .5f,  .5f, -.5f}, {.8f, .8f, .1f}),
+            Mesh::Vertex(11,{ .5f,  .5f,  .5f}, {.8f, .8f, .1f}), // Same as 7
+
+            // top face (orange, y points down) - Indices 12 to 17
+            Mesh::Vertex(12,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(13,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(14,{-.5f, -.5f,  .5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(15,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}), // Same as 12
+            Mesh::Vertex(16,{ .5f, -.5f, -.5f}, {.9f, .6f, .1f}),
+            Mesh::Vertex(17,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}), // Same as 13
+
+            // bottom face (red) - Indices 18 to 23
+            Mesh::Vertex(18,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(19,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(20,{-.5f,  .5f,  .5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(21,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}), // Same as 18
+            Mesh::Vertex(22,{ .5f,  .5f, -.5f}, {.8f, .1f, .1f}),
+            Mesh::Vertex(23,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}), // Same as 19
+
+            // nose face (blue) - Indices 24 to 29
+            Mesh::Vertex(24,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(25,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(26,{-.5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(27,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}), // Same as 24
+            Mesh::Vertex(28,{ .5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
+            Mesh::Vertex(29,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}), // Same as 25
+
+            // tail face (green) - Indices 30 to 35
+            Mesh::Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
+            Mesh::Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            Mesh::Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
+        };
+        for (auto& v : vertices) {
+          v.position += offset;
+        }
+        return std::make_unique<Model>(vertices);
+      }
+
     // Load initial game scene data
     void loadGameObjects()
     {
-        std::vector<Vertex> vertices = {
-             // Position                 Color
-             Vertex(0, { 0.0f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}), // Vertex 0: Bottom, Red
-             Vertex(1, { 0.5f,  0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}), // Vertex 1: Top right, Green
-             Vertex(2, {-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f, 1.0f})  // Vertex 2: Top left, Blue
-        };
+        std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
 
-
-         // Ensure device is ready before creating model (which creates buffers)
-        assert(g_Device != VK_NULL_HANDLE && "Device must be initialized before loading game objects");
-
-        // Create a shared pointer to the model
-        std::shared_ptr<Model> triModel = nullptr;
-        try {
-             triModel = std::make_shared<Model>(vertices);
-        } catch (const std::exception& e) {
-            std::cerr << "Failed to create model: " << e.what() << std::endl;
-            throw; // Rethrow, as rendering requires the model
-        }
-
-
-        // Create a GameObject using the factory method
-        GameObject triangle = GameObject::createGameObject("Test Triangle");
-        triangle.model = triModel; // Assign the model
-        triangle.color = glm::vec3(0.8f, 0.1f, 0.1f); // Set object color (used by push constant)
-        triangle.transform.SetPosition(glm::vec3(0.0f, 0.0f, 0.0f)); // Center the triangle initially
-        triangle.transform.SetScale(glm::vec3(1.0f, 2.0f, 1.0f)); // Set scale to 1
-        triangle.transform.SetRotation(0.0f); // No rotation initially
-
-        // Add the game object to the global list using move semantics
-        gameObjects.push_back(std::move(triangle));
-
-
-        std::cout << "Loaded " << gameObjects.size() << " game object(s)." << std::endl;
+        GameObject cube = GameObject::createGameObject("cube");
+        cube.model = mod;
+        cube.transform.translation = {0.f,0.f,2.5f};
+        cube.transform.scale = {.5f,.5f,.5f};
+        gameObjects.push_back(std::move(cube));
     }
 
 } // namespace Kinesis

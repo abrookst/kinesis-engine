@@ -20,7 +20,7 @@ namespace Kinesis
         VkBuffer vertexBuffer;
         VkDeviceMemory vertexBufferMemory; // Use extern
         uint32_t vertexCount; 
-        void createVertexBuffers(const std::vector<Vertex> &vertices);
+        void createVertexBuffers(const std::vector<Mesh::Vertex> &vertices);
 
 
     public:
@@ -40,6 +40,14 @@ namespace Kinesis
          * @brief Initializes the model by creating the vertex buffer with the given data.
          * (Currently just calls createVertexBuffers).
          * @param vertices The vertex data to initialize the model with.
+         */
+        Model(const std::vector<Mesh::Vertex> &vertices);
+        
+        /**
+         * @brief Initializes the model from an .obj file.
+         * (Currently just calls createVertexBuffers).
+         * @param path The folder containing the file.
+         * @param input_file The name of the .obj file.
          */
         Model(const std::string &path, const std::string& input_file);
 

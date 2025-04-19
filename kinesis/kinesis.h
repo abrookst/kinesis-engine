@@ -44,7 +44,7 @@ namespace Kinesis
 
     class RenderSystem;
     extern RenderSystem* mainRenderSystem;
-
+    class GameObject;
     extern std::vector<GameObject> gameObjects;
 
     //namespace functions

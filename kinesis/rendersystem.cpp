@@ -114,8 +114,6 @@ namespace Kinesis{
         for(GameObject& gObj : gameObjects){
             if (gObj.model == nullptr) continue;
 
-            gObj.transform.rotation.y = glm::mod(gObj.transform.rotation.y + 0.01f, glm::two_pi<float>());
-            gObj.transform.rotation.x = glm::mod(gObj.transform.rotation.x + 0.005f, glm::two_pi<float>());
 
             // Prepare push constant data
             SimplePushConstantData push{};

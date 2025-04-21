@@ -179,18 +179,79 @@ namespace Kinesis {
         return std::make_unique<Model>(vertices);
       }
 
+	std::shared_ptr<Model> createCornellBox() {
+        std::vector<Mesh::Vertex> vertices{
+       
+            // left face (red) - Indices 0 to 5
+            Mesh::Vertex(0, {-.5f, -.5f, -.5f}, {1.f, 0.f, 0.f}),
+            Mesh::Vertex(1, {-.5f,  .5f,  .5f}, {1.f, 0.f, 0.f}),
+            Mesh::Vertex(2, {-.5f, -.5f,  .5f}, {1.f, 0.f, 0.f}),
+            Mesh::Vertex(3, {-.5f, -.5f, -.5f}, {1.f, 0.f, 0.f}), // Same as 0
+            Mesh::Vertex(4, {-.5f,  .5f, -.5f}, {1.f, 0.f, 0.f}),
+            Mesh::Vertex(5, {-.5f,  .5f,  .5f}, {1.f, 0.f, 0.f}), // Same as 1
+
+            // right face (green) - Indices 6 to 11
+            Mesh::Vertex(6, {.5f, -.5f, -.5f}, {0.f, 1.f, 0.f}),
+            Mesh::Vertex(7, {.5f,  .5f,  .5f}, {0.f, 1.f, 0.f}),
+            Mesh::Vertex(8, {.5f, -.5f,  .5f}, {0.f, 1.f, 0.f}),
+            Mesh::Vertex(9, {.5f, -.5f, -.5f}, {0.f, 1.f, 0.f}), // Same as 6
+            Mesh::Vertex(10,{ .5f,  .5f, -.5f}, {0.f, 1.f, 0.f}),
+            Mesh::Vertex(11,{ .5f,  .5f,  .5f}, {0.f, 1.f, 0.f}), // Same as 7
+
+            // top face (white) - Indices 12 to 17
+            Mesh::Vertex(12,{-.5f, -.5f, -.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(13,{ .5f, -.5f,  .5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(14,{-.5f, -.5f,  .5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(15,{-.5f, -.5f, -.5f}, {.84f, .84f, .84f}), // Same as 12
+            Mesh::Vertex(16,{ .5f, -.5f, -.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(17,{ .5f, -.5f,  .5f}, {.84f, .84f, .84f}), // Same as 13
+
+            // bottom face (white) - Indices 18 to 23
+            Mesh::Vertex(18,{-.5f,  .5f, -.5f}, {.54f, .54f, .54f}),
+            Mesh::Vertex(19,{ .5f,  .5f,  .5f}, {.54f, .54f, .54f}),
+            Mesh::Vertex(20,{-.5f,  .5f,  .5f}, {.54f, .54f, .54f}),
+            Mesh::Vertex(21,{-.5f,  .5f, -.5f}, {.54f, .54f, .54f}), // Same as 18
+            Mesh::Vertex(22,{ .5f,  .5f, -.5f}, {.54f, .54f, .54f}),
+            Mesh::Vertex(23,{ .5f,  .5f,  .5f}, {.54f, .54f, .54f}), // Same as 19
+
+            // nose face (white) - Indices 24 to 29
+            Mesh::Vertex(24,{-.5f, -.5f, 0.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(25,{ .5f,  .5f, 0.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(26,{-.5f,  .5f, 0.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(27,{-.5f, -.5f, 0.5f}, {.84f, .84f, .84f}), // Same as 24
+            Mesh::Vertex(28,{ .5f, -.5f, 0.5f}, {.84f, .84f, .84f}),
+            Mesh::Vertex(29,{ .5f,  .5f, 0.5f}, {.84f, .84f, .84f}), // Same as 25
+
+            // tail face (green) - Indices 30 to 35
+            // Mesh::Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            // Mesh::Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            // Mesh::Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
+            // Mesh::Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
+            // Mesh::Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
+            // Mesh::Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
+        };
+        return std::make_unique<Model>(vertices);
+      }
+
     // Load initial game scene data
     void loadGameObjects()
     {
         // std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
 		// std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "cornell_box.obj");
 		std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "bunny_200.obj");
+		std::shared_ptr<Model> mod2 = createCornellBox();
 
-        GameObject cube = GameObject::createGameObject("bunny");
-        cube.model = mod;
-        cube.transform.translation = {0.f,0.5f,2.5f};
-        cube.transform.scale = {-2.f,-2.f,-2.f};
-        gameObjects.push_back(std::move(cube));
+        GameObject bunny = GameObject::createGameObject("bunny");
+        bunny.model = mod;
+        bunny.transform.translation = {0.f,1.f,2.5f};
+        bunny.transform.scale = {-3.f,-3.f,-3.f};
+        gameObjects.push_back(std::move(bunny));
+
+		GameObject cornell_box = GameObject::createGameObject("cornell_box");
+		cornell_box.model = mod2;
+		cornell_box.transform.translation = {0.f,0.f,2.5f};
+		cornell_box.transform.scale = {2.f,2.f,2.f};
+		gameObjects.push_back(std::move(cornell_box));
     }
 
 } // namespace Kinesis

@@ -52,6 +52,7 @@ namespace Kinesis::Mesh {
 
 			// =================
 			// ACCESS THE LIGHTS
+			std::vector<Triangle*>& getTriangles() { return triangles; }
 			std::vector<Triangle*>& getLights() { return lights; }
 
 			// ===============

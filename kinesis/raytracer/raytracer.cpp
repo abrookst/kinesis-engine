@@ -1,5 +1,6 @@
 #include "raytracer.h"
-#include "./gameobject.h"
+#include "gameobject.h"
+#include "mesh/triangle.h"
 
 using namespace Kinesis::Raytracing;
 
@@ -15,7 +16,7 @@ bool Kinesis::Raytracing::RayTracer::CastRay(const Ray &ray, Hit &h) const
     // checks if material is transmissive. see triangle.cpp
     for (Kinesis::GameObject obj : gameObjects) {
         // get each tri in game object's mesh
-        for (Kinesis::Mesh::Triangle *t : ) {
+        for (Kinesis::Mesh::Triangle *t : obj.model->getMesh()->getTriangles()) {
             if (t->intersect(ray, h))
                 answer = true;
         }
@@ -135,7 +136,18 @@ inline Vec3f MirrorDirection(const Vec3f &normal, const Vec3f &incoming) {
     else if (m->isTransmissive()) { // 1
         // split ray and CRY.
         for (unsigned int i = 0; i < Spectra::num_lambdas; i++) {
-            glm::vec3 transmiss_dir;
+            glm::vec3 transmissive_dir;
+            /* glm::vec3 face_normal = normal;
+             * if (glm::dot(normal, ray.getDirection()) > 0)
+             *   face_normal = -normal;
+             * n1 = inside ? m->getIOR() : 1.000273;
+             * n2 = inside ? 1.000273 : m->getIOR();
+             * k = n1 / n2
+             * cos_theta = glm::dot(face_normal, ray.getDirection())
+             * root = 1 - square(k) * (1 - square(cos_theta));
+             * if (root < 0 || reflectance(cos_theta, k) >) transmissive_dir = reflection_calc; // total internal reflection
+             * else transmissive_dir = k * ray.getDirection() - (k * cos_theta + sqrt(root)) * face_normal;
+             */
             Ray transmiss_ray = Ray(point, transmissive_dir, ray.getLambda());
             Hit transmiss_hit = Hit();
             TraceRay(transmiss_ray, transmiss_hit, spd, bounce_count);

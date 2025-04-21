@@ -172,12 +172,6 @@ namespace Kinesis::Mesh {
 				float r,g,b;
 				objfile >> r >> g >> b;
 				background_color = glm::vec3(r,g,b);
-			//} else if (token == "PerspectiveCamera") {
-			//	camera = new PerspectiveCamera();
-			//	objfile >> *(PerspectiveCamera*)camera;
-			//} else if (token == "OrthographicCamera") {
-			//	camera = new OrthographicCamera();
-			//	objfile >> *(OrthographicCamera*)camera;
 			} else if (token == "m") {
 				// this is not standard .obj format!!
 				// materials
@@ -221,27 +215,13 @@ namespace Kinesis::Mesh {
 				assert (token == "emitted");
 				objfile >> r >> g >> b;
 				emitted = glm::vec3(r,g,b);
-				// materials.push_back(new Material(texture_file,diffuse,reflective,emitted,roughness));
-				//materials.push_back(new Kinesis::Mesh::Material(texture_file,diffuse,reflective,transmissive,emitted,roughness,indexOfRefraction));
+				materials.push_back(new Kinesis::Mesh::Material(texture_file,diffuse,reflective,transmissive,emitted,roughness,indexOfRefraction));
 			} else {
 				std::cout << "UNKNOWN TOKEN " << token << std::endl;
 				exit(0);
 			}
 		}
 		std::cout << " mesh loaded: " << numTriangles() << " triangles and " << numEdges() << " edges." << std::endl;
-
-		/*
-		if (camera == NULL) {
-			std::cout << "NO CAMERA PROVIDED, CREATING DEFAULT CAMERA" << std::endl;
-			// if not initialized, position a perspective camera and scale it so it fits in the window
-			assert (bbox != NULL);
-			glm::vec3 point_of_interest; bbox->getCenter(point_of_interest);
-			float max_dim = bbox->maxDim();
-			glm::vec3 camera_position = point_of_interest + Vector3(0,0,4*max_dim);
-			glm::vec3 up = Vector3(0,1,0);
-			camera = new PerspectiveCamera(camera_position, point_of_interest, up, 20 * M_PI/180.0);    
-		}
-		*/
 	}
 }
 

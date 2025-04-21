@@ -1,6 +1,8 @@
 // --- kinesis/RayTracingManager.cpp ---
 #include "RayTracingManager.h"
 #include "GUI.h"
+#include "mesh/mesh.h"
+#include "gameobject.h"
 #include <stdexcept>
 #include <vector>
 #include <array>
@@ -228,4 +230,280 @@ namespace Kinesis::RayTracingManager {
     }
 
 
+    /*************************************************************************************************************/
+    //                                     Acceleration Structure functions
+    /*************************************************************************************************************/
+    uint64_t getBufferAddress(VkBuffer buffer) const {
+        VkBufferDeviceAddressInfoKHR buffer_device_address_info{};
+        buffer_device_address_info.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        buffer_device_address_info.buffer = buffer;
+        return vkGetBufferDeviceAddressKHR(g_Device, &buffer_device_address_info);
+    }
+
+	ScratchBuffer create_scratch_buffer(VkDeviceSize size) {
+        ScratchBuffer scratch_buffer{};
+    
+        VkBufferCreateInfo buffer_create_info = {};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.size = size;
+        buffer_create_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        VK_CHECK(vkCreateBuffer(g_Device, &buffer_create_info, nullptr, &scratch_buffer.buffer));
+    
+        VkMemoryRequirements memory_requirements = {};
+        vkGetBufferMemoryRequirements(g_Device, scratch_buffer.buffer, &memory_requirements);
+    
+        VkMemoryAllocateFlagsInfo memory_allocate_flags_info = {};
+        memory_allocate_flags_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+        memory_allocate_flags_info.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
+    
+        VkMemoryAllocateInfo memory_allocate_info = {};
+        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memory_allocate_info.pNext = &memory_allocate_flags_info;
+        memory_allocate_info.allocationSize = memory_requirements.size;
+        memory_allocate_info.memoryTypeIndex = get_device().get_memory_type(memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        VK_CHECK(vkAllocateMemory(g_Device, &memory_allocate_info, nullptr, &scratch_buffer.memory));
+        VK_CHECK(vkBindBufferMemory(g_Device, scratch_buffer.buffer, scratch_buffer.memory, 0));
+    
+        VkBufferDeviceAddressInfoKHR buffer_device_address_info{};
+        buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+        buffer_device_address_info.buffer = scratch_buffer.buffer;
+        scratch_buffer.address = vkGetBufferDeviceAddressKHR(g_Device, &buffer_device_address_info);
+    
+        return scratch_buffer;
+    }
+    
+	void delete_scratch_buffer(ScratchBuffer &scratch_buffer) {
+        if (scratch_buffer.memory != NULL) vkFreeMemory(g_Device, scratch_buffer.memory, nullptr);
+        if (scratch_buffer.buffer != NULL) vkDestroyBuffer(g_Device, scratch_buffer.buffer, nullptr);
+    }
+
+    void create_blas() {
+        /*
+        TODO: this below
+            Though we use similar code to handle static and dynamic objects, several parts differ:
+                1. Static / dynamic objects have different buffers (device-only vs host-visible)
+                2. Dynamic objects use different flags (i.e. for fast rebuilds)
+        */
+        // create vectors to store necessary info for construction
+        blas = std::vector<AccelerationStructure>(gameObjects.size());
+
+        for (size_t i = 0; i < gameObjects.size(); i++) {
+            GameObject *obj = &gameObjects[i];
+            AccelerationStructure acc_struct;
+
+            // get the mesh attached to the game object and the model attached to the mesh
+            Model *model = obj->model;
+            Mesh::Mesh *mesh = model->getMesh();
+            uint32_t prim_count = mesh->numTriangles();
+
+            /*
+            TODO: HIGHLY recommend adding an index buffer to model so nothing gets constructed here
+            */
+            VkDeviceOrHostAddressConstKHR vertex_address{};
+            VkDeviceOrHostAddressConstKHR index_address{};
+            vertex_address.deviceAddress = get_buffer_device_address(model->getVertexBuffer());
+	        index_address.deviceAddress = get_buffer_device_address(/*model->getIndexBuffer()*/);
+            
+            // make the geometry info
+            VkAccelerationStructureGeometryTrianglesDataKHR triangles{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR};
+            triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+            triangles.vertexData.deviceAddress = vertexAddress;
+            triangles.vertexStride = sizeof(Mesh::Vertex);
+            triangles.indexType = VK_INDEX_TYPE_UINT32;
+            triangles.indexData.deviceAddress = get_buffer_device_address(/*model->getIndexBuffer()*/);
+            triangles.transformData = {};
+            triangles.maxVertex = prim_count*3-1;
+
+            VkAccelerationStructureGeometryKHR asGeom{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR};
+            asGeom.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+            asGeom.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+            asGeom.geometry.triangles = triangles;
+
+            VkAccelerationStructureBuildRangeInfoKHR offset;
+            offset.firstVertex = 0;
+            offset.primitiveCount  = prim_count;
+            offset.primitiveOffset = 0;
+            offset.transformOffset = 0;
+            
+            VkAccelerationStructureBuildGeometryInfoKHR structure_geometry_info{};
+            structure_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+            structure_geometry_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+            structure_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+            structure_geometry_info.geometryCount = 1;
+            structure_geometry_info.pGeometries = &asGeom;
+
+            VkAccelerationStructureBuildSizesInfoKHR build_size_info{};
+            build_size_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+            vkGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &structure_geometry_info, &prim_count, &build_size_info);
+
+            // make the buffer to store
+            blas[i] = AccelerationStructure{};
+            blas[i].buffer = /* TODO: make new buffer to correct size */;
+
+            VkAccelerationStructureCreateInfoKHR accel_info{};
+            accel_info.sType  = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+            accel_info.buffer = blas[i].buffer;
+            accel_info.size   = build_size_info.accelerationStructureSize;
+            accel_info.type   = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+            vkCreateAccelerationStructureKHR(g_Device, &acceleration_structure_create_info, nullptr, &blas[i].structure);
+
+            // making the actual acceleration structure now
+            ScratchBuffer scratch_buffer = create_scratch_buffer(build_size_info.buildScratchSize);
+
+            // new geometry info :(
+            VkAccelerationStructureBuildGeometryInfoKHR build_geometry_info{};
+            build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+            build_geometry_info.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+            build_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+            build_geometry_info.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+            build_geometry_info.dstAccelerationStructure  = blas[i].structure;
+            build_geometry_info.geometryCount = 1;
+            build_geometry_info.pGeometries = &asGeom;
+            build_geometry_info.scratchData.deviceAddress = scratch_buffer.device_address;
+
+            /* TODO: create command buffer for this */
+            VkCommandBufferAllocateInfo buffer_allocate{};
+            buffer_allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+            buffer_allocate.commandPool = /* TODO: command pool here :( */;
+            buffer_allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            buffer_allocate.commandBufferCount = 1;
+            
+            VkCommandBuffer command_buffer;
+            VK_CHECK(vkAllocateCommandBuffers(g_Device, &buffer_allocate, &command_buffer));
+            VkCommandBufferBeginInfo buffer_info{};
+            buffer_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+            VK_CHECK(vkBeginCommandBuffer(command_buffer, &buffer_info));
+
+            vkCmdBuildAccelerationStructuresKHR(command_buffer, 1, &structure_geometry_info, &offset);
+            /* TODO: flush the command buffer here */
+
+            delete_scratch_buffer(scratch_buffer);
+
+            // get address info
+            VkAccelerationStructureDeviceAddressInfoKHR address_info{};
+            address_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+            address_info.accelerationStructure = blas[i].structure;
+            blas[i].address = vkGetAccelerationStructureDeviceAddressKHR(g_Device, &address_info);
+        }
+    }
+
+	void create_tlas() {
+        std::vector<VkAccelerationStructureInstanceKHR> temp_tlas = std::vector<VkAccelerationStructureInstanceKHR>(gameObjects.size());
+        //VkDeviceOrHostAddressConstKHR
+        
+        for (size_t i = 0; i < gameObjects.size(); i++) {
+            GameObject *obj = &gameObjects[i];
+            VkAccelerationStructureInstanceKHR instance{};
+            // TODO: convert/append VkTransformMatrixKHR matrix to transform.h so it can be grabbed here
+            instance.transform; // = obj.transform.(VkTransformMatrixKHR ver here);
+            instance.instanceCustomIndex = i;
+            instance.mask = 0xFF;
+            /* TODO: add in backface hit for transmissive objects, which will be a different offest */
+            // if (obj->getMesh()->getMaterial()->isTransmissive()) instance.instanceShaderBindingTableRecordOffset = 1; 
+            // else
+            instance.instanceShaderBindingTableRecordOffset = 0;
+            instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+            instance.accelerationStructureReference = blas[i].address;
+
+            temp_tlas.push_back(instance);
+        }
+
+        VkBufferCreateInfo buff_create{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        buff_create.size = gameObjects.size();
+        buff_create.usage = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+       
+        //
+        if (!instances_buffer) {
+            /* TODO: make instance buffer out of temp_tlas data here */
+        }
+        // TODO: update buffer if any changes
+
+        VkDeviceOrHostAddressConstKHR instance_address{};
+        instance_address.deviceAddress = get_buffer_device_address(instances_buffer);
+        
+        VkAccelerationStructureGeometryKHR structure_geometry{};
+        structure_geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+        structure_geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+        structure_geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+        structure_geometry.geometry.instances = {};
+        structure_geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+        structure_geometry.geometry.instances.arrayOfPointers = VK_FALSE;
+        structure_geometry.geometry.instances.data = instance_address;
+
+        //
+        VkAccelerationStructureBuildGeometryInfoKHR build_geometry_info{};
+        build_geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+        build_geometry_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        build_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+        build_geometry_info.geometryCount = 1;
+        build_geometry_info.pGeometries = &structure_geometry;
+
+        const uint32_t prim_count = gameObjects.size();
+
+        VkAccelerationStructureBuildSizesInfoKHR build_size{};
+        build_size.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+        vkGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &build_geometry_info, &prim_count, &build_size);
+
+        if (!tlas.buffer) {
+            tlas.buffer = /* TODO: make new buffer to correct size */;
+        }
+
+        bool is_update = false;
+        if (!tlas.structure) {
+            VkAccelerationStructureCreateInfoKHR create_info{};
+            create_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+            create_info.buffer = tlas.buffer;
+            create_info.size = build_size.accelerationStructureSize;
+            create_info.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+            vkCreateAccelerationStructureKHR(g_Device, &create_info, nullptr, &tlas.structure);
+        }
+        else is_update = true;
+
+        /* TODO: scratch buffer AUUUUG */
+        ScratchBuffer scratch_buffer = create_scratch_buffer(build_size.buildScratchSize);
+
+        build_geometry_info.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+        build_geometry_info.mode = is_update ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        build_geometry_info.dstAccelerationStructure = tlas.structure;
+        if (is_update) build_geometry_info.srcAccelerationStructure = tlas.structure;
+        build_geometry_info.scratchData.deviceAddress
+
+        VkAccelerationStructureBuildRangeInfoKHR range_info;
+        range_info.primitiveCount = prim_count;
+        range_info.primitiveOffset = 0;
+        range_info.firstVertex = 0;
+        range_info.transformOffset = 0;
+        std::vector<VkAccelerationStructureBuildRangeInfoKHR *> acceleration_build_structure_range_infos = {&range_info};
+
+        /* TODO: create command buffer for this */
+        VkCommandBufferAllocateInfo buffer_allocate{};
+        buffer_allocate.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        buffer_allocate.commandPool = /* TODO: command pool here :( */;
+        buffer_allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        buffer_allocate.commandBufferCount = 1;
+        
+        VkCommandBuffer command_buffer;
+        VK_CHECK(vkAllocateCommandBuffers(g_Device, &buffer_allocate, &command_buffer));
+        VkCommandBufferBeginInfo buffer_info{};
+        buffer_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        VK_CHECK(vkBeginCommandBuffer(command_buffer, &buffer_info));
+
+        vkCmdBuildAccelerationStructuresKHR(command_buffer, 1, &structure_geometry_info, &offset);
+
+        /* TODO: flush the command buffer here */
+
+        delete_scratch_buffer(scratch_buffer);
+
+        VkAccelerationStructureDeviceAddressInfoKHR address_info{};
+        address_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+        address_info.accelerationStructure = tlas.structure;
+        tlas.device_address = vkGetAccelerationStructureDeviceAddressKHR(g_Device, &address_info);
+    }
+
+	void delete_acceleration_structure(AccelerationStructure &acceleration_structure) {
+        /*
+        TODO: reset/clean buffer of structure
+        */
+        if (acceleration_structure.handle) vkDestroyAccelerationStructureKHR(g_Device, acceleration_structure.handle, nullptr);
+    }
 } 

@@ -5,6 +5,18 @@
 #include <vector>
 
 namespace Kinesis::RayTracingManager {
+    struct AccelerationStructure {
+        VkAccelerationStructureKHR structure;
+        uint64_t address;
+        VkBuffer buffer;
+    };
+
+    struct ScratchBuffer {
+        uint64_t address;
+        VkBuffer buffer;
+        VkDeviceMemory memory;
+    };
+
     extern VkDescriptorSetLayout rtDescriptorSetLayout;
     extern VkPipelineLayout rtPipelineLayout; // RT specific pipeline layout
     extern VkDescriptorSet rtDescriptorSet;
@@ -13,6 +25,18 @@ namespace Kinesis::RayTracingManager {
     // extern VkBuffer sbtBuffer;
     // extern VkDeviceMemory sbtBufferMemory;
     // ... etc ...
+	extern VkPhysicalDeviceRayTracingPipelinePropertiesKHR  rt_pipeline_properties{};
+	extern VkPhysicalDeviceAccelerationStructureFeaturesKHR as_features{};
+    extern std::vector<AccelerationStructure> blas;
+	extern AccelerationStructure tlas;
+    extern std::unique_ptr<VkBuffer> vertex_buffer;
+    extern std::unique_ptr<VkBuffer> index_buffer;
+    extern std::unique_ptr<VkBuffer> instances_buffer;
+    extern std::vector<VkRayTracingShaderGroupCreateInfoKHR> shader_groups{};
+    /*
+    TODO: put the shader binding tables here
+    */
+    
 
     /**
      * @brief Initializes ray tracing resources if supported by hardware.
@@ -51,6 +75,44 @@ namespace Kinesis::RayTracingManager {
     // void createPipelineLayout(); // Declaration if needed externally
     // void allocateDescriptorSet(); // Declaration if needed externally
 
+    // Functions for the building and deletion of the acceleration structures
+    /**
+     * @brief a helper function to get the address of any buffer
+     * @param buffer the buffer to get the address of
+     * Need to check if any functions mirror this 
+     */
+	uint64_t getBufferAddress(VkBuffer buffer) const;
+
+    /**
+     * @brief 
+     * @param size the size of the new buffer
+     */
+	ScratchBuffer create_scratch_buffer(VkDeviceSize size);
+
+    /** 
+     * @brief deletes and cleans up the memory used by the scratch buffer temporarily
+     * @param scratch_buffer the buffer to delete
+     */
+	void delete_scratch_buffer(ScratchBuffer &scratch_buffer);
+
+    /**
+     * @brief creates the blas and stores it in the blas extern
+     */
+    void create_blas();
+
+    /**
+     * @brief creates the tlas and stores it in the tlas extern
+     */
+	void create_tlas();
+
+    /**
+     * @brief cleans up the memory of an acceleration structure
+     */
+	void delete_acceleration_structure(AccelerationStructure &acceleration_structure);
+
+    protected:
+    // just to assist with building both the blas and tlas
+    VkTransformMatrixKHR accel_transform = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
 } 
 
 #endif 

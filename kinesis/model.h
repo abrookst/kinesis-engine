@@ -25,6 +25,16 @@ namespace Kinesis
 
     public:
         /**
+         * @brief returns the address of the attached mesh
+         */
+        Mesh::Mesh* getMesh() { return &mesh; }
+
+        /**
+         * @brief returns the vertex buffer
+         */
+        VkBuffer getVertexBuffer() { return vertexBuffer; }
+
+        /**
          * @brief Binds the vertex buffer to the specified command buffer for drawing.
          * @param commandBuffer The command buffer to bind the vertex buffer to.
          */

@@ -245,12 +245,6 @@ namespace Kinesis::Window
             std::vector<VkExtensionProperties> extensions(extension_count);
             vkEnumerateDeviceExtensionProperties(gpus[i], nullptr, &extension_count, extensions.data());
 
-            std::cout << "  Extensions (" << extension_count << "):\n";
-            for (const auto &ext : extensions)
-            {
-                std::cout << "    - " << ext.extensionName << " (spec version " << ext.specVersion << ")\n";
-            }
-
             // Print some feature support
             VkPhysicalDeviceFeatures features;
             vkGetPhysicalDeviceFeatures(gpus[i], &features);

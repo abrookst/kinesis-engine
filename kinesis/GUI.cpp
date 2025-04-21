@@ -9,6 +9,7 @@ namespace Kinesis::GUI
     bool show_gameobject = false;
     bool show_toolbar = true;
     bool dark_mode = true;
+    bool raytracing_available = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
 
     void HelpMarker(const char *desc)

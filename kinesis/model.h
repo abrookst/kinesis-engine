@@ -27,7 +27,7 @@ namespace Kinesis
         /**
          * @brief returns the address of the attached mesh
          */
-        Mesh::Mesh *getMesh() { return &mesh; }
+        Mesh::Mesh* getMesh() { return &mesh; }
 
         /**
          * @brief returns the vertex buffer

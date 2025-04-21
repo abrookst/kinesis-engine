@@ -12,6 +12,7 @@ namespace Kinesis::GUI
     extern bool show_gameobject;
     extern bool show_toolbar;
     extern bool dark_mode;
+    extern bool raytracing_available;
     extern ImVec4 clear_color;
 
     /**

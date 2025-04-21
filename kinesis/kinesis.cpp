@@ -237,8 +237,9 @@ namespace Kinesis {
     void loadGameObjects()
     {
         // std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
-		// std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "cornell_box.obj");
 		std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "bunny_200.obj");
+		// std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "bunny_1k.obj");
+		// std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "bunny_40k.obj");
 		std::shared_ptr<Model> mod2 = createCornellBox();
 
         GameObject bunny = GameObject::createGameObject("bunny");

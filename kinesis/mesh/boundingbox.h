@@ -56,9 +56,9 @@ namespace Kinesis::Mesh
         }
         void Set(const glm::vec3 &_minimum, const glm::vec3 &_maximum)
         {
-            assert(minimum.x <= maximum.x &&
-                   minimum.y <= maximum.y &&
-                   minimum.z <= maximum.z);
+            assert(_minimum.x <= _maximum.x &&
+                   _minimum.y <= _maximum.y &&
+                   _minimum.z <= _maximum.z);
             minimum = _minimum;
             maximum = _maximum;
         }

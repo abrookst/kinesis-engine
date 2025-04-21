@@ -30,13 +30,7 @@ namespace Kinesis::Mesh {
 				assert (i >= 0 && i < numVertices());
 				return vertices[i];
 			}
-			std::vector<Vertex> getVertices() { 
-				std::vector<Vertex> verticesCopy;
-				for (int i = 0; i < numVertices(); i++) {
-					verticesCopy.push_back(*vertices[i]);
-				}
-				return verticesCopy;
-			 }
+			std::vector<Vertex> getFaceVertices();
 			// this creates a relationship between 3 vertices (2 parents, 1 child)
 			void setParentsChild(Vertex *p1, Vertex *p2, Vertex *child);
 			// this accessor will find a child vertex (if it exists) when given

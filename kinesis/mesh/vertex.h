@@ -12,7 +12,7 @@ namespace Kinesis::Mesh {
 	
 			// ========================
 			// CONSTRUCTOR & DESTRUCTOR
-			Vertex(int i, const glm::vec3 &pos, const glm::vec3 &col = glm::vec3(0,0,0)) : position(pos), color(col) { index = i; s = 0; t = 0; }
+			Vertex(int i, const glm::vec3 &pos, const glm::vec3 &col = glm::vec3(0.9,0.9,0.9)) : position(pos), color(col) { index = i; s = 0; t = 0; }
 			
 			glm::vec3 position;
 			float s,t;

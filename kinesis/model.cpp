@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstring>
 #include "model.h"
+#include "mesh/mesh.h"
 
 namespace Kinesis {
 
@@ -42,7 +43,7 @@ namespace Kinesis {
       
     Model::Model(const std::string &path, const std::string& input_file){
         mesh.Load(path, input_file);
-        createVertexBuffers(mesh.getVertices());
+        createVertexBuffers(mesh.getFaceVertices());
     }
 
     Model::~Model(){

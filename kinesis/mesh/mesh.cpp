@@ -106,6 +106,15 @@ namespace Kinesis::Mesh {
 		delete ec;
 	}
 
+	std::vector<Vertex> Mesh::getFaceVertices() { 
+		std::vector<Vertex> verticesCopy;
+		for (int i = 0; i < triangles.size(); i++) {
+			verticesCopy.push_back(*(*triangles[i])[0]);
+			verticesCopy.push_back(*(*triangles[i])[1]);
+			verticesCopy.push_back(*(*triangles[i])[2]);
+		}
+		return verticesCopy;
+	}
 	// ==============================================================================
 	// EDGE HELPER FUNCTIONS
 
@@ -156,16 +165,14 @@ namespace Kinesis::Mesh {
 				objfile >> s >> t;
 				getVertex((int)numVertices()-1)->setTextureCoordinates(s,t);
 			} else if (token == "f") {
-				int a,b,c,d;
-				objfile >> a >> b >> c >> d;
+				int a,b,c;
+				objfile >> a >> b >> c;
 				a--;
 				b--;
 				c--;
-				d--;
 				assert (a >= 0 && a < numVertices());
 				assert (b >= 0 && b < numVertices());
 				assert (c >= 0 && c < numVertices());
-				assert (d >= 0 && d < numVertices());
 				assert (active_material != NULL);
 				addTriangle(getVertex(a),getVertex(b),getVertex(c),active_material);
 			} else if (token == "background_color") {

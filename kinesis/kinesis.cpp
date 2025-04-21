@@ -182,12 +182,14 @@ namespace Kinesis {
     // Load initial game scene data
     void loadGameObjects()
     {
-        std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
+        // std::shared_ptr<Model> mod = createCubeModel({0.f,0.f,0.f});
+		// std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "cornell_box.obj");
+		std::shared_ptr<Model> mod = std::make_unique<Model>("../../kinesis/assets/models", "bunny_200.obj");
 
-        GameObject cube = GameObject::createGameObject("cube");
+        GameObject cube = GameObject::createGameObject("bunny");
         cube.model = mod;
-        cube.transform.translation = {0.f,0.f,2.5f};
-        cube.transform.scale = {.5f,.5f,.5f};
+        cube.transform.translation = {0.f,0.5f,2.5f};
+        cube.transform.scale = {-2.f,-2.f,-2.f};
         gameObjects.push_back(std::move(cube));
     }
 

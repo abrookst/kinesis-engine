@@ -2,6 +2,7 @@
 #define __MATERIAL_H__
 
 #include <string>
+#include "glm/glm.hpp"
 
 namespace Kinesis::Raytracing {
 	class Hit;

@@ -449,6 +449,9 @@ namespace Kinesis::Window
 
             err = vkCreateDevice(g_PhysicalDevice, &create_info, g_Allocator, &g_Device);
             check_vk_result(err);
+#ifdef IMGUI_IMPL_VULKAN_USE_VOLK
+            if(g_Device) volkLoadDevice(g_Device); // <<< Ensure Volk loads device functions >>>
+#endif
             vkGetDeviceQueue(g_Device, g_QueueFamily, 0, &g_Queue);
         }
 

@@ -34,14 +34,14 @@ add_executable(${my_executable}
     ${GAME_SRCS}
     ${KINESIS_SRCS}
     ${MESH_SRCS}
-    #${RAYTRACER_SRCS}
+    ${RAYTRACER_SRCS}
     ${IMGUI_SRCS}
     )
 
 include(cmake/CPM.cmake)
 include(kinesis/assets/shaders/CMakeLists.txt)
 
-find_package(Vulkan REQUIRED)
+find_package(Vulkan REQUIRED COMPONENTS glslangValidator)
 include_directories(${Vulkan_INCLUDE_DIRS})
 target_link_libraries(${my_executable} ${Vulkan_LIBRARIES})
 

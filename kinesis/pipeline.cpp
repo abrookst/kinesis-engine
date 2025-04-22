@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <cassert>
 #include <iostream>
+#include <filesystem>
 
 namespace Kinesis::Pipeline
 {
@@ -18,6 +19,7 @@ namespace Kinesis::Pipeline
         assert(configInfo.pipelineLayout != VK_NULL_HANDLE && "Cannot create pipeline, no layout specified.");
         assert(configInfo.renderPass != VK_NULL_HANDLE && "Cannot create pipeline, no render pass specified.");
 
+        std::cout << "Current directory: " << std::filesystem::current_path().string() << std::endl;
         auto vertCode = readFile(vertFilePath);
         auto fragCode = readFile(fragFilePath);
 

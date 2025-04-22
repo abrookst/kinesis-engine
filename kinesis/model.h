@@ -18,12 +18,22 @@ namespace Kinesis
     private:
         Mesh::Mesh mesh;
         VkBuffer vertexBuffer;
-        VkDeviceMemory vertexBufferMemory; // Use extern
+        VkDeviceMemory vertexBufferMemory;
         uint32_t vertexCount;
-        void createVertexBuffers(const std::vector<Mesh::Vertex> &vertices);
+        bool hasIndexBuffer = false;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
+        uint32_t indexCount;
 
+        void createVertexBuffers(const std::vector<Mesh::Vertex> &vertices);
+        void createIndexBuffers(const std::vector<uint32_t> &indices);
  
     public:
+
+    struct Builder {
+        std::vector<Kinesis::Mesh::Vertex> vertices {};
+        std::vector<uint32_t> indices{};
+    };
         /**
          * @brief returns the address of the attached mesh
          */
@@ -33,6 +43,7 @@ namespace Kinesis
          * @brief returns the vertex buffer
          */
         VkBuffer getVertexBuffer() { return vertexBuffer; }
+        VkBuffer getIndexBuffer() { return indexBuffer; }
 
         /**
          * @brief Binds the vertex buffer to the specified command buffer for drawing.
@@ -51,7 +62,7 @@ namespace Kinesis
          * (Currently just calls createVertexBuffers).
          * @param vertices The vertex data to initialize the model with.
          */
-        Model(const std::vector<Mesh::Vertex> &vertices);
+        Model(const Builder& builder);
 
         /**
          * @brief Initializes the model from an .obj file.

@@ -47,6 +47,8 @@ namespace Kinesis
     class GameObject;
     extern std::vector<GameObject> gameObjects;
 
+    extern VkDescriptorSetLayout globalSetLayout;
+
     //namespace functions
     bool run();
     void initialize(int width = 600, int height = 600);

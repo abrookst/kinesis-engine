@@ -287,11 +287,11 @@ namespace Kinesis {
 
                 // Use composite shader paths (adjust if needed)
                  #if __APPLE__
-                    const std::string vertPath = "../../../../../../kinesis/assets/shaders/bin/composite.vert.spv";
+                    const std::string vertPath = "../../../../../../kinesis/assets/shaders/bin/compositing.vert.spv";
                     const std::string fragPath = "../../../../../../kinesis/assets/shaders/bin/composite.frag.spv";
                  #else
-                    const std::string vertPath = "../../../kinesis/assets/shaders/bin/composite.vert.spv";
-                    const std::string fragPath = "../../../kinesis/assets/shaders/bin/composite.frag.spv";
+                    const std::string vertPath = "../../../kinesis/assets/shaders/bin/compositing.vert.spv";
+                    const std::string fragPath = "../../../kinesis/assets/shaders/bin/compositing.frag.spv";
                  #endif
 
                 // --- Load Shaders ---

@@ -1,5 +1,14 @@
+#include <iostream>  // For std::cerr
+#include <stdexcept> // For std::exception
+#include <vector>    // For std::vector
+#include <memory>    // For std::unique_ptr, std::make_unique, std::shared_ptr
+#include <cassert>   // For assert
+#include <chrono>
 #include "kinesis.h"
 #include "buffer.h" // Include the new Buffer helper
+#include "gbuffer.h"           // Include for GBuffer access
+#include "raytracer/raytracermanager.h" // Include for RayTracerManager access
+#include "mesh/material.h" // Include for Kinesis::Mesh::Material
 
 // Define structure matching shader uniform buffer object (UBO)
 // Ensure layout matches shader definition (std140 alignment often used)
@@ -11,18 +20,34 @@ struct CameraBufferObject {
     // Add other global uniforms like camera position if needed
 };
 
+// Add this struct definition somewhere accessible, e.g., material.h or a new common_types.h
+// Make sure layout matches GLSL std430 rules for SSBOs
+struct MaterialData {
+    alignas(16) glm::vec3 baseColor;
+    alignas(16) glm::vec3 emissiveColor; // Example: if materials can emit light
+    alignas(4) float roughness;
+    alignas(4) float metallic;
+    alignas(4) float ior; // Index of Refraction
+    alignas(4) int type;  // Matches MaterialType enum
+    // Add padding if needed to meet std430 alignment for the whole struct
+    // alignas(4) int _padding[x];
+};
+
+
 #include "window.h"
 #include "GUI.h"
 #include "renderer.h"
 #include "rendersystem.h" // Include RenderSystem header
 #include "camera.h"
 #include "keyboard_controller.h"
+
 #include <iostream> // For std::cerr
 #include <stdexcept> // For std::exception
 #include <vector>    // For std::vector
 #include <memory>    // For std::unique_ptr, std::make_unique, std::shared_ptr
 #include <cassert>   // For assert
 #include <chrono>
+#include <array>     // For std::array
 
 
 using namespace Kinesis;
@@ -53,11 +78,33 @@ namespace Kinesis {
     std::vector<VkDescriptorSet> globalDescriptorSets;
     // --- End Additions ---
 
+    // --- Add Global Variable for Material Buffer ---
+    std::unique_ptr<Buffer> materialBuffer = nullptr;
+    std::vector<MaterialData> sceneMaterialData; // Host-side copy
+    // --- End Addition ---
+
+
+    // --- Add Global Variables for Compositing ---
+    // Compositing Pass Resources
+    VkPipelineLayout compositePipelineLayout = VK_NULL_HANDLE;
+    VkPipeline compositePipeline = VK_NULL_HANDLE;
+    VkDescriptorSetLayout compositeSetLayout = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> compositeDescriptorSets;
+    // --- End Additions ---
+
+
     auto currentTime = std::chrono::high_resolution_clock::now();
 
     void initialize(int width, int height){
         try {
             Kinesis::Window::initialize(width, height); // Initializes Vulkan core, window, ImGui
+            // Note: Renderer::Initialize calls recreateSwapChain, which finds depth format.
+            // We need the depth format for GBuffer setup.
+            // Either pass depth format here or ensure SwapChain is created first.
+            // Let's assume SwapChain is created inside Window::initialize->Renderer::Initialize
+            assert(Kinesis::Renderer::SwapChain != nullptr && "Swapchain must be initialized before GBuffer setup!");
+            VkFormat depthFormat = Kinesis::Renderer::SwapChain->findDepthFormat();
+            Kinesis::GBuffer::setup(width, height, depthFormat); // Initialize GBuffer
             loadGameObjects(); // Loads models into gameObjects vector
 
             // --- Create Global UBO Buffers & Descriptor Set Layout/Sets ---
@@ -94,13 +141,13 @@ namespace Kinesis {
             // Allocate Descriptor Sets (one per frame in flight) from the global pool
             globalDescriptorSets.resize(Kinesis::SwapChain::MAX_FRAMES_IN_FLIGHT);
             std::vector<VkDescriptorSetLayout> layouts(Kinesis::SwapChain::MAX_FRAMES_IN_FLIGHT, globalSetLayout); // Need layout array for allocation
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = g_DescriptorPool; // Use the global pool created in window.cpp
-            allocInfo.descriptorSetCount = static_cast<uint32_t>(Kinesis::SwapChain::MAX_FRAMES_IN_FLIGHT);
-            allocInfo.pSetLayouts = layouts.data();
+            VkDescriptorSetAllocateInfo allocInfoSet{}; // Renamed variable
+            allocInfoSet.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+            allocInfoSet.descriptorPool = g_DescriptorPool; // Use the global pool created in window.cpp
+            allocInfoSet.descriptorSetCount = static_cast<uint32_t>(Kinesis::SwapChain::MAX_FRAMES_IN_FLIGHT);
+            allocInfoSet.pSetLayouts = layouts.data();
 
-            if (vkAllocateDescriptorSets(g_Device, &allocInfo, globalDescriptorSets.data()) != VK_SUCCESS) {
+            if (vkAllocateDescriptorSets(g_Device, &allocInfoSet, globalDescriptorSets.data()) != VK_SUCCESS) {
                  throw std::runtime_error("failed to allocate global descriptor sets!");
             }
 
@@ -120,295 +167,568 @@ namespace Kinesis {
             }
             // --- End Descriptor Set Setup ---
 
-            // RenderSystem constructor needs the globalSetLayout to be ready if it uses it
-            mainRenderSystem = new RenderSystem(); // RenderSystem constructor calls createPipelineLayout/createPipeline
+
+            // --- Create Material Buffer ---
+            {
+                sceneMaterialData.clear(); // Clear any previous data
+                // Iterate through loaded game objects and collect material data
+                for (const auto& go : gameObjects) {
+                    if (go.model && go.model->getMesh()) {
+                         const auto& meshMaterials = go.model->getMesh()->getMaterials();
+                         if (!meshMaterials.empty()) {
+                             // Simple case: Assume one material per mesh/object
+                             // More complex: Handle multiple materials per mesh if needed
+                             Kinesis::Mesh::Material* mat = meshMaterials[0];
+                             MaterialData data{};
+                             data.baseColor = mat->getDiffuseColor();
+                             data.emissiveColor = mat->getEmittedColor(); // Example
+                             data.roughness = mat->getRoughness();
+                             data.metallic = (mat->getType() == Kinesis::Mesh::MaterialType::METAL) ? 1.0f : 0.0f;
+                             data.ior = mat->getIOR();
+                             data.type = static_cast<int>(mat->getType());
+                             sceneMaterialData.push_back(data);
+                         } else {
+                             // Handle object with no material - push a default?
+                             sceneMaterialData.push_back({}); // Push default-constructed data
+                             std::cerr << "Warning: GameObject '" << go.name << "' has no material for SSBO." << std::endl;
+                         }
+                    } else {
+                        // Handle object with no model - push a default?
+                        sceneMaterialData.push_back({});
+                         std::cerr << "Warning: GameObject '" << go.name << "' has no model for SSBO." << std::endl;
+                    }
+                }
+
+                // Ensure we have at least one material entry, even if empty
+                if (sceneMaterialData.empty()) {
+                    sceneMaterialData.push_back({});
+                }
+
+
+                // Create the GPU buffer
+                materialBuffer = std::make_unique<Buffer>(
+                    sizeof(MaterialData),                   // Size of one material struct
+                    static_cast<uint32_t>(sceneMaterialData.size()), // Number of materials
+                    VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,     // Usage is SSBO
+                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+                );
+                materialBuffer->map();
+                materialBuffer->writeToBuffer(sceneMaterialData.data());
+                // No need to unmap/flush due to HOST_COHERENT
+
+                 std::cout << "Material SSBO created with " << sceneMaterialData.size() << " entries." << std::endl;
+            }
+            // --- End Material Buffer Creation ---
+
+
+            // --- Initialize Ray Tracing (if available) ---
+            if (Kinesis::GUI::raytracing_available) {
+                // Pass material buffer info to RT manager if needed for descriptors immediately
+                Kinesis::RayTracerManager::initialize({static_cast<uint32_t>(width), static_cast<uint32_t>(height)});
+            }
+
+            // --- Create RenderSystem (for G-Buffer Pass) ---
+            mainRenderSystem = new RenderSystem(); // Uses globalSetLayout
+
+
+            // ===================================
+            // --- Create Compositing Pipeline ---
+            // ===================================
+            {
+                // --- 1. Create Compositing Descriptor Set Layout ---
+                std::vector<VkDescriptorSetLayoutBinding> compositeBindings;
+                // Binding 0: GBuffer Position
+                compositeBindings.push_back({0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+                // Binding 1: GBuffer Normal
+                compositeBindings.push_back({1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+                // Binding 2: GBuffer Albedo
+                compositeBindings.push_back({2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+                // Binding 3: GBuffer Properties
+                compositeBindings.push_back({3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+                // Binding 4: RT Output Image
+                compositeBindings.push_back({4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr});
+
+                VkDescriptorSetLayoutCreateInfo compositeLayoutInfo{}; // Renamed variable
+                compositeLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+                compositeLayoutInfo.bindingCount = static_cast<uint32_t>(compositeBindings.size());
+                compositeLayoutInfo.pBindings = compositeBindings.data();
+
+                if (vkCreateDescriptorSetLayout(g_Device, &compositeLayoutInfo, nullptr, &compositeSetLayout) != VK_SUCCESS) {
+                    throw std::runtime_error("Failed to create compositing descriptor set layout!");
+                }
+
+                // --- 2. Create Compositing Pipeline Layout ---
+                VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+                pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+                // **MODIFIED:** Bind compositeSetLayout to Set 2 (matches shader)
+                std::vector<VkDescriptorSetLayout> compLayouts = { compositeSetLayout };
+                pipelineLayoutInfo.setLayoutCount = 1; // Set count is 1
+                pipelineLayoutInfo.pSetLayouts = &compositeSetLayout; // Point to the layout itself
+                // pipelineLayoutInfo.setLayoutCount = 3; // Set count is 3 (0, 1, 2)
+                // pipelineLayoutInfo.pSetLayouts = layouts; // Point to array of layouts
+
+                pipelineLayoutInfo.pushConstantRangeCount = 0; // No push constants for simple composite
+
+                if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &compositePipelineLayout) != VK_SUCCESS) {
+                    vkDestroyDescriptorSetLayout(g_Device, compositeSetLayout, nullptr); // Cleanup
+                    throw std::runtime_error("Failed to create compositing pipeline layout!");
+                }
+
+                // --- 3. Create Compositing Pipeline ---
+                Pipeline::ConfigInfo configInfo{};
+                Pipeline::defaultConfigInfo(configInfo); // Get defaults
+                configInfo.renderPass = Kinesis::Renderer::SwapChain->getRenderPass(); // Renders to swapchain
+                configInfo.pipelineLayout = compositePipelineLayout;
+                // Disable depth test/write for fullscreen quad
+                configInfo.depthStencilInfo.depthTestEnable = VK_FALSE;
+                configInfo.depthStencilInfo.depthWriteEnable = VK_FALSE;
+                // Adjust blend state if needed (default is no blend)
+                // configInfo.colorBlendAttachment.blendEnable = VK_TRUE; ...
+
+                // Use composite shader paths (adjust if needed)
+                 #if __APPLE__
+                    const std::string vertPath = "../../../../../../kinesis/assets/shaders/bin/composite.vert.spv";
+                    const std::string fragPath = "../../../../../../kinesis/assets/shaders/bin/composite.frag.spv";
+                 #else
+                    const std::string vertPath = "../../../kinesis/assets/shaders/bin/composite.vert.spv";
+                    const std::string fragPath = "../../../kinesis/assets/shaders/bin/composite.frag.spv";
+                 #endif
+
+                // --- Load Shaders ---
+                 auto compositeVertCode = Pipeline::readFile(vertPath);
+                 auto compositeFragCode = Pipeline::readFile(fragPath);
+                 VkShaderModule compositeVertModule, compositeFragModule;
+
+                 auto createShaderModule = [&](const std::vector<char>& code, VkShaderModule* shaderModule) {
+                    VkShaderModuleCreateInfo createInfo{};
+                    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+                    createInfo.codeSize = code.size();
+                    createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
+                    if (vkCreateShaderModule(g_Device, &createInfo, nullptr, shaderModule) != VK_SUCCESS) {
+                        throw std::runtime_error("failed to create shader module!");
+                    }
+                 };
+                 createShaderModule(compositeVertCode, &compositeVertModule);
+                 createShaderModule(compositeFragCode, &compositeFragModule);
+
+                // --- Pipeline Create Info ---
+                 VkPipelineShaderStageCreateInfo shaderStages[2];
+                 shaderStages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                 shaderStages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+                 shaderStages[0].module = compositeVertModule;
+                 shaderStages[0].pName = "main";
+                 shaderStages[0].pNext = nullptr;
+                 shaderStages[0].pSpecializationInfo = nullptr;
+                 shaderStages[0].flags = 0;
+
+                 shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+                 shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+                 shaderStages[1].module = compositeFragModule;
+                 shaderStages[1].pName = "main";
+                 shaderStages[1].pNext = nullptr;
+                 shaderStages[1].pSpecializationInfo = nullptr;
+                 shaderStages[1].flags = 0;
+
+                 // No vertex input for fullscreen triangle generated in VS
+                 VkPipelineVertexInputStateCreateInfo emptyInputState{};
+                 emptyInputState.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+                 emptyInputState.vertexBindingDescriptionCount = 0;
+                 emptyInputState.pVertexBindingDescriptions = nullptr;
+                 emptyInputState.vertexAttributeDescriptionCount = 0;
+                 emptyInputState.pVertexAttributeDescriptions = nullptr;
+
+                 VkGraphicsPipelineCreateInfo compositePipelineInfo{}; // Renamed variable
+                 compositePipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+                 compositePipelineInfo.stageCount = 2;
+                 compositePipelineInfo.pStages = shaderStages;
+                 compositePipelineInfo.pVertexInputState = &emptyInputState; // Use empty input state
+                 compositePipelineInfo.pInputAssemblyState = &configInfo.inputAssemblyInfo;
+                 compositePipelineInfo.pViewportState = &configInfo.viewportInfo;
+                 compositePipelineInfo.pRasterizationState = &configInfo.rasterizationInfo;
+                 compositePipelineInfo.pMultisampleState = &configInfo.multisampleInfo;
+                 compositePipelineInfo.pColorBlendState = &configInfo.colorBlendInfo;
+                 compositePipelineInfo.pDepthStencilState = &configInfo.depthStencilInfo;
+                 compositePipelineInfo.pDynamicState = &configInfo.dynamicStateInfo;
+                 compositePipelineInfo.layout = compositePipelineLayout;
+                 compositePipelineInfo.renderPass = configInfo.renderPass; // Swapchain render pass
+                 compositePipelineInfo.subpass = configInfo.subpass; // Subpass 0
+                 compositePipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+                 compositePipelineInfo.basePipelineIndex = -1;
+
+                 if (vkCreateGraphicsPipelines(g_Device, VK_NULL_HANDLE, 1, &compositePipelineInfo, nullptr, &compositePipeline) != VK_SUCCESS) {
+                     vkDestroyShaderModule(g_Device, compositeVertModule, nullptr);
+                     vkDestroyShaderModule(g_Device, compositeFragModule, nullptr);
+                     vkDestroyPipelineLayout(g_Device, compositePipelineLayout, nullptr);
+                     vkDestroyDescriptorSetLayout(g_Device, compositeSetLayout, nullptr);
+                     throw std::runtime_error("Failed to create compositing graphics pipeline!");
+                 }
+
+                 // --- Cleanup Shader Modules ---
+                 vkDestroyShaderModule(g_Device, compositeVertModule, nullptr);
+                 vkDestroyShaderModule(g_Device, compositeFragModule, nullptr);
+
+                 // --- 4. Allocate Compositing Descriptor Sets ---
+                 compositeDescriptorSets.resize(SwapChain::MAX_FRAMES_IN_FLIGHT);
+                 std::vector<VkDescriptorSetLayout> compositeLayouts(SwapChain::MAX_FRAMES_IN_FLIGHT, compositeSetLayout); // Renamed var
+                 VkDescriptorSetAllocateInfo compositeAllocInfo{}; // Renamed var
+                 compositeAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+                 compositeAllocInfo.descriptorPool = g_DescriptorPool;
+                 compositeAllocInfo.descriptorSetCount = static_cast<uint32_t>(SwapChain::MAX_FRAMES_IN_FLIGHT);
+                 compositeAllocInfo.pSetLayouts = compositeLayouts.data();
+
+                 if (vkAllocateDescriptorSets(g_Device, &compositeAllocInfo, compositeDescriptorSets.data()) != VK_SUCCESS) {
+                     // Cleanup previously created composite resources
+                     vkDestroyPipeline(g_Device, compositePipeline, nullptr);
+                     vkDestroyPipelineLayout(g_Device, compositePipelineLayout, nullptr);
+                     vkDestroyDescriptorSetLayout(g_Device, compositeSetLayout, nullptr);
+                     throw std::runtime_error("failed to allocate compositing descriptor sets!");
+                 }
+                 std::cout << "Compositing Pipeline Initialized." << std::endl;
+            } // End Compositing Pipeline Scope
+
 
         } catch (const std::exception& e) {
             std::cerr << "Kinesis Initialization Failed: " << e.what() << std::endl;
-            // Perform partial cleanup
-             if (mainRenderSystem) {
-                 delete mainRenderSystem;
-                 mainRenderSystem = nullptr;
-             }
-             // Cleanup descriptor set layout if created
-             if (globalSetLayout != VK_NULL_HANDLE && g_Device != VK_NULL_HANDLE) {
-                 vkDestroyDescriptorSetLayout(g_Device, globalSetLayout, nullptr);
-                 globalSetLayout = VK_NULL_HANDLE;
-             }
-             // Buffers cleaned by unique_ptr
+            // --- Perform partial cleanup for compositing resources if they were created ---
+             if (compositePipeline != VK_NULL_HANDLE) vkDestroyPipeline(g_Device, compositePipeline, nullptr);
+             if (compositePipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(g_Device, compositePipelineLayout, nullptr);
+             if (compositeSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(g_Device, compositeSetLayout, nullptr);
+             // --- Add Material Buffer Cleanup ---
+             materialBuffer.reset(); // Cleanup material buffer if initialization failed
+             // --- End Material Buffer Cleanup ---
+             if (mainRenderSystem) { delete mainRenderSystem; mainRenderSystem = nullptr; }
+             if (globalSetLayout != VK_NULL_HANDLE && g_Device != VK_NULL_HANDLE) { vkDestroyDescriptorSetLayout(g_Device, globalSetLayout, nullptr); globalSetLayout = VK_NULL_HANDLE;}
              uboBuffers.clear();
-             // Window::cleanup handles core Vulkan/GLFW/ImGui cleanup
+             Kinesis::GBuffer::cleanup(); // Cleanup GBuffer
+             if (Kinesis::GUI::raytracing_available) Kinesis::RayTracerManager::cleanup(); // Cleanup RT
              Kinesis::Window::cleanup();
-             throw; // Re-throw to signal failure
+            throw;
         }
     }
 
     // Main application loop
     bool run()
     {
-
          // Check if the window should close
         if(glfwWindowShouldClose(Kinesis::Window::window)){
-            // --- Cleanup before exiting ---
-            try {
-                // Ensure device is idle before destroying resources
-                if (g_Device != VK_NULL_HANDLE) {
-                     vkDeviceWaitIdle(g_Device);
-                }
-                // Destroy application-specific resources
-                if (mainRenderSystem) {
-                    delete mainRenderSystem;
-                    mainRenderSystem = nullptr;
-                }
-                 // Clean up descriptor set layout
-                if (globalSetLayout != VK_NULL_HANDLE && g_Device != VK_NULL_HANDLE) {
-                     vkDestroyDescriptorSetLayout(g_Device, globalSetLayout, nullptr);
-                     globalSetLayout = VK_NULL_HANDLE;
-                }
-                // UBO Buffers are cleaned up automatically by unique_ptr
-                uboBuffers.clear();
-                // Descriptor sets are automatically freed when the pool (g_DescriptorPool) is destroyed
-                globalDescriptorSets.clear();
-
-                // Clear game objects (models will be destroyed by shared_ptr if no other references exist)
-                gameObjects.clear();
-
-                // Call global cleanup function (cleans up Window, Renderer, Vulkan core, GLFW, ImGui)
-                Kinesis::Window::cleanup();
-            } catch (const std::exception& e) {
-                 std::cerr << "Error during cleanup: " << e.what() << std::endl;
-            }
-            return false; // Signal loop termination
+            if (g_Device != VK_NULL_HANDLE) vkDeviceWaitIdle(g_Device);
+            // --- Cleanup Compositing Resources ---
+             if (compositePipeline != VK_NULL_HANDLE) vkDestroyPipeline(g_Device, compositePipeline, nullptr);
+             if (compositePipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(g_Device, compositePipelineLayout, nullptr);
+             if (compositeSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(g_Device, compositeSetLayout, nullptr);
+             // Descriptor sets freed with pool
+             compositeDescriptorSets.clear();
+            // --- End Compositing Cleanup ---
+            if (Kinesis::GUI::raytracing_available) Kinesis::RayTracerManager::cleanup();
+            Kinesis::GBuffer::cleanup(); // Cleanup GBuffer resources
+            if (mainRenderSystem) delete mainRenderSystem;
+            if (globalSetLayout != VK_NULL_HANDLE && g_Device != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(g_Device, globalSetLayout, nullptr);
+            // Cleanup Material Buffer
+            materialBuffer.reset();
+            uboBuffers.clear();
+            gameObjects.clear();
+            Kinesis::Window::cleanup();
+            return false;
         }
-        else{
-            // --- Input and Event Processing ---
+        else {
+            // --- Input, Event Processing, GUI Update, Camera Update ---
             glfwPollEvents();
             auto newTime = std::chrono::high_resolution_clock::now();
             float frameTime = std::chrono::duration<float, std::chrono::seconds::period>(newTime-currentTime).count();
             currentTime = newTime;
-
-            // Update player movement/camera based on input
             Kinesis::Keyboard::moveInPlaneXZ(frameTime, player);
             mainCamera.setViewYXZ(player.transform.translation, player.transform.rotation);
+            Kinesis::GUI::update_imgui();
+            float aspect = Kinesis::Renderer::getAspectRatio();
+            mainCamera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 1000.f); // Increased far plane
 
-            // --- GUI Update ---
-            Kinesis::GUI::update_imgui(); // Prepare ImGui frame data
-
-            // --- Rendering ---
             try {
-                 // Start the frame: acquire swapchain image, begin command buffer
-                float aspect = Kinesis::Renderer::getAspectRatio();
-                mainCamera.setPerspectiveProjection(glm::radians(50.f), aspect, 0.1f, 100.f); // Increased far plane
-
-                 if(auto commandBuffer = Kinesis::Renderer::beginFrame()){ // Returns null if swapchain needs recreate
+                if(auto commandBuffer = Kinesis::Renderer::beginFrame()){
+                    int frameIndex = Kinesis::Renderer::currentFrameIndex;
 
                     // --- Update Camera UBO ---
-                    int frameIndex = Kinesis::Renderer::currentFrameIndex; // Get current frame index from Renderer
-                    CameraBufferObject ubo{}; // Create UBO data struct on stack
+                    CameraBufferObject ubo{};
                     ubo.projection = mainCamera.getProjection();
                     ubo.view = mainCamera.getView();
-                    // Calculate inverse matrices (useful for world pos reconstruction, etc.)
                     ubo.inverseProjection = glm::inverse(ubo.projection);
                     ubo.inverseView = glm::inverse(ubo.view);
-
-                    // Write UBO data to the mapped buffer for the current frame
                     uboBuffers[frameIndex]->writeToBuffer(&ubo, sizeof(ubo));
-                    // uboBuffers[frameIndex]->flush(); // Only needed if memory is not HOST_COHERENT
 
-                    // --- Begin Render Pass ---
-                    // This begins the *swapchain* render pass (for final output to screen)
-                    // G-Buffer rendering might happen before this in a separate pass, or directly here if simple.
-                    // Assuming G-Buffer pass happens first, then composition/ImGui in swapchain pass.
-                    // TODO: Implement G-Buffer rendering pass if deferred shading is used.
-                    // For now, render directly to swapchain render pass.
+                    // =========================
+                    // Pass 1: G-Buffer Pass
+                    // =========================
+                     {
+                        VkRenderPassBeginInfo gbufferRenderPassBeginInfo{};
+                        gbufferRenderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                        gbufferRenderPassBeginInfo.renderPass = Kinesis::GBuffer::renderPass;
+                        gbufferRenderPassBeginInfo.framebuffer = Kinesis::GBuffer::frameBuffer;
+                        gbufferRenderPassBeginInfo.renderArea.offset = {0, 0};
+                        gbufferRenderPassBeginInfo.renderArea.extent = Kinesis::GBuffer::extent;
+                        std::array<VkClearValue, 5> gbufferClearValues{};
+                        gbufferClearValues[0].color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+                        gbufferClearValues[1].color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+                        gbufferClearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}}; // Clear color for albedo
+                        gbufferClearValues[3].color = {{0.0f, 0.0f, 0.0f, 0.0f}};
+                        gbufferClearValues[4].depthStencil = {1.0f, 0};
+                        gbufferRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(gbufferClearValues.size());
+                        gbufferRenderPassBeginInfo.pClearValues = gbufferClearValues.data();
 
-                    Kinesis::Renderer::beginSwapChainRenderPass(commandBuffer); // Use the main swapchain render pass
+                        vkCmdBeginRenderPass(commandBuffer, &gbufferRenderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-                    // --- Render Game Objects ---
-                    if (mainRenderSystem) {
-                        // Pass the correct global descriptor set for the current frame
-                        // This renders using the pipeline bound by RenderSystem (currently GBuffer pipeline)
-                        // This should likely render to the G-Buffer framebuffer, not the swapchain one.
-                        // We need to adjust where renderGameObjects is called or what renderpass/pipeline it uses.
+                        VkViewport gbufferViewport{};
+                        gbufferViewport.x = 0.0f;
+                        gbufferViewport.y = 0.0f;
+                        gbufferViewport.width = static_cast<float>(Kinesis::GBuffer::extent.width);
+                        gbufferViewport.height = static_cast<float>(Kinesis::GBuffer::extent.height);
+                        gbufferViewport.minDepth = 0.0f;
+                        gbufferViewport.maxDepth = 1.0f;
+                        vkCmdSetViewport(commandBuffer, 0, 1, &gbufferViewport);
+                        VkRect2D gbufferScissor{{0, 0}, Kinesis::GBuffer::extent};
+                        vkCmdSetScissor(commandBuffer, 0, 1, &gbufferScissor);
 
-                        // **Temporary:** Render directly to swapchain pass using the RenderSystem's pipeline
-                        mainRenderSystem->renderGameObjects(commandBuffer, mainCamera, globalDescriptorSets[frameIndex]);
+                        if (mainRenderSystem) {
+                            mainRenderSystem->renderGameObjects(commandBuffer, mainCamera, globalDescriptorSets[frameIndex]);
+                        }
+                        vkCmdEndRenderPass(commandBuffer);
                     }
 
-                     // --- Render ImGui ---
-                    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
-                    // --- End Render Pass ---
-                    Kinesis::Renderer::endSwapChainRenderPass(commandBuffer);
+                    // =========================
+                    // Pass 2: Ray Tracing Pass
+                    // =========================
+                    if (Kinesis::GUI::raytracing_available) {
+                        VkImageMemoryBarrier rtOutputBarrier{};
+                        rtOutputBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                        rtOutputBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; // Assume read in previous composite pass
+                        rtOutputBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        rtOutputBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Or UNDEFINED if first frame
+                        rtOutputBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+                        rtOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        rtOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        rtOutputBarrier.image = Kinesis::RayTracerManager::rtOutput.image;
+                        rtOutputBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+                        vkCmdPipelineBarrier(commandBuffer,
+                                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // After previous compositing pass
+                                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, // Before RT shader runs
+                                             0, 0, nullptr, 0, nullptr, 1, &rtOutputBarrier);
+
+                        Kinesis::RayTracerManager::allocateAndUpdateRtDescriptorSet(Kinesis::RayTracerManager::tlas.structure, VK_NULL_HANDLE, 0);
+                        Kinesis::RayTracerManager::bind(commandBuffer, globalDescriptorSets[frameIndex]);
+                        Kinesis::RayTracerManager::traceRays(commandBuffer, Kinesis::GBuffer::extent.width, Kinesis::GBuffer::extent.height);
+                    }
+
+
+                    // =========================
+                    // Pass 3: Compositing Pass (Onto Swapchain)
+                    // =========================
+                    {
+                        // --- Barrier: RT Writes -> Compositing Shader Reads ---
+                         VkImageMemoryBarrier rtOutputToSampleBarrier{};
+                         rtOutputToSampleBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                         rtOutputToSampleBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                         rtOutputToSampleBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                         rtOutputToSampleBarrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+                         rtOutputToSampleBarrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                         rtOutputToSampleBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                         rtOutputToSampleBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                         rtOutputToSampleBarrier.image = Kinesis::RayTracerManager::rtOutput.image; // Check if RT enabled? Assume it exists.
+                         rtOutputToSampleBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+                         vkCmdPipelineBarrier(commandBuffer,
+                                         Kinesis::GUI::raytracing_available ? VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR : VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, // Wait for RT or GBuffer
+                                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, // Before Compositing FS
+                                         0, 0, nullptr, 0, nullptr,
+                                         Kinesis::GUI::raytracing_available ? 1 : 0, // Conditionally add barrier
+                                         Kinesis::GUI::raytracing_available ? &rtOutputToSampleBarrier : nullptr);
+
+                        // --- Update Compositing Descriptor Set ---
+                        // Create temporary image info structs (must stay in scope for vkUpdateDescriptorSets)
+                        VkDescriptorImageInfo posInfo{GBuffer::sampler, GBuffer::positionAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                        VkDescriptorImageInfo normInfo{GBuffer::sampler, GBuffer::normalAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                        VkDescriptorImageInfo albInfo{GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                        VkDescriptorImageInfo propInfo{GBuffer::sampler, GBuffer::propertiesAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                        // Use a default black texture or similar if RT is disabled or RT output is invalid
+                        VkImageView rtOutputImageView = (Kinesis::GUI::raytracing_available && RayTracerManager::rtOutput.view != VK_NULL_HANDLE)
+                                                          ? RayTracerManager::rtOutput.view
+                                                          : GBuffer::albedoAttachment.view; // Fallback to albedo view (ensure it exists)
+                        VkDescriptorImageInfo rtInfo{GBuffer::sampler, rtOutputImageView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+
+                        std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
+
+                        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        descriptorWrites[0].dstSet = compositeDescriptorSets[frameIndex];
+                        descriptorWrites[0].dstBinding = 0; // gbuffer_position
+                        descriptorWrites[0].dstArrayElement = 0;
+                        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        descriptorWrites[0].descriptorCount = 1;
+                        descriptorWrites[0].pImageInfo = &posInfo;
+
+                        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        descriptorWrites[1].dstSet = compositeDescriptorSets[frameIndex];
+                        descriptorWrites[1].dstBinding = 1; // gbuffer_normal
+                        descriptorWrites[1].dstArrayElement = 0;
+                        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        descriptorWrites[1].descriptorCount = 1;
+                        descriptorWrites[1].pImageInfo = &normInfo;
+
+                        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        descriptorWrites[2].dstSet = compositeDescriptorSets[frameIndex];
+                        descriptorWrites[2].dstBinding = 2; // gbuffer_albedo
+                        descriptorWrites[2].dstArrayElement = 0;
+                        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        descriptorWrites[2].descriptorCount = 1;
+                        descriptorWrites[2].pImageInfo = &albInfo;
+
+                        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        descriptorWrites[3].dstSet = compositeDescriptorSets[frameIndex];
+                        descriptorWrites[3].dstBinding = 3; // gbuffer_properties
+                        descriptorWrites[3].dstArrayElement = 0;
+                        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        descriptorWrites[3].descriptorCount = 1;
+                        descriptorWrites[3].pImageInfo = &propInfo;
+
+                        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                        descriptorWrites[4].dstSet = compositeDescriptorSets[frameIndex];
+                        descriptorWrites[4].dstBinding = 4; // rt_output
+                        descriptorWrites[4].dstArrayElement = 0;
+                        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                        descriptorWrites[4].descriptorCount = 1;
+                        descriptorWrites[4].pImageInfo = &rtInfo;
+
+                        vkUpdateDescriptorSets(g_Device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+
+                        // --- Begin Swapchain Render Pass ---
+                        Renderer::beginSwapChainRenderPass(commandBuffer);
+
+                        // --- Bind Compositing Pipeline & Descriptors ---
+                        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipeline);
+                        // **MODIFIED:** Bind to Set 0 (as pipeline layout was created with only one set)
+                        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipelineLayout,
+                                                0, // Bind to Set 0
+                                                1, &compositeDescriptorSets[frameIndex],
+                                                0, nullptr);
+                        // **IMPORTANT:** You MUST update composite.frag to use `layout(set = 0, binding = ...)` for all textures.
+
+                        // --- Draw Fullscreen Triangle ---
+                        vkCmdDraw(commandBuffer, 3, 1, 0, 0); // Draw 3 vertices for the fullscreen triangle
+
+                        // --- Render ImGui ---
+                        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
+                        // --- End Swapchain Render Pass ---
+                        Renderer::endSwapChainRenderPass(commandBuffer);
+                    } // End Compositing Pass Scope
 
                     // --- End Frame ---
-                    Kinesis::Renderer::endFrame(); // Submits command buffer, presents image
-                }
+                    Renderer::endFrame();
+                } // End if(commandBuffer)
             } catch (const std::exception& e) {
                 std::cerr << "Error during rendering loop: " << e.what() << std::endl;
-                 // Consider how to handle errors - continue, break, rethrow?
             }
             return true; // Signal loop continuation
-        }
-    }
+        } // End else (window not closing)
+    } // End run()
 
     // --- Helper functions for creating simple models ---
     // Uses Model::Builder now
 
     std::shared_ptr<Model> createCubeModel(glm::vec3 offset) {
-        std::vector<Mesh::Vertex> vertices{
-       
-            // left face (white) - Indices 0 to 5
-            Mesh::Vertex(0, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}),
-            Mesh::Vertex(1, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}),
-            Mesh::Vertex(2, {-.5f, -.5f,  .5f}, {.9f, .9f, .9f}),
-            // Note: Original vertices list seemed to have duplicates, ensure correct vertices for a cube.
-            // Assuming unique vertices per face corner for simplicity here. Adjust if needed.
-            // Re-using vertex 0, 1, 2 for the second triangle of the left face
-            Mesh::Vertex(3, {-.5f, -.5f, -.5f}, {.9f, .9f, .9f}), // Same as 0
-            Mesh::Vertex(4, {-.5f,  .5f, -.5f}, {.9f, .9f, .9f}),
-            Mesh::Vertex(5, {-.5f,  .5f,  .5f}, {.9f, .9f, .9f}), // Same as 1
-
-            // right face (yellow) - Indices 6 to 11
-            Mesh::Vertex(6, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}),
-            Mesh::Vertex(7, {.5f,  .5f,  .5f}, {.8f, .8f, .1f}),
-            Mesh::Vertex(8, {.5f, -.5f,  .5f}, {.8f, .8f, .1f}),
-            Mesh::Vertex(9, {.5f, -.5f, -.5f}, {.8f, .8f, .1f}), // Same as 6
-            Mesh::Vertex(10,{ .5f,  .5f, -.5f}, {.8f, .8f, .1f}),
-            Mesh::Vertex(11,{ .5f,  .5f,  .5f}, {.8f, .8f, .1f}), // Same as 7
-
-            // top face (orange, y points down) - Indices 12 to 17
-            Mesh::Vertex(12,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}),
-            Mesh::Vertex(13,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}),
-            Mesh::Vertex(14,{-.5f, -.5f,  .5f}, {.9f, .6f, .1f}),
-            Mesh::Vertex(15,{-.5f, -.5f, -.5f}, {.9f, .6f, .1f}), // Same as 12
-            Mesh::Vertex(16,{ .5f, -.5f, -.5f}, {.9f, .6f, .1f}),
-            Mesh::Vertex(17,{ .5f, -.5f,  .5f}, {.9f, .6f, .1f}), // Same as 13
-
-            // bottom face (red) - Indices 18 to 23
-            Mesh::Vertex(18,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}),
-            Mesh::Vertex(19,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}),
-            Mesh::Vertex(20,{-.5f,  .5f,  .5f}, {.8f, .1f, .1f}),
-            Mesh::Vertex(21,{-.5f,  .5f, -.5f}, {.8f, .1f, .1f}), // Same as 18
-            Mesh::Vertex(22,{ .5f,  .5f, -.5f}, {.8f, .1f, .1f}),
-            Mesh::Vertex(23,{ .5f,  .5f,  .5f}, {.8f, .1f, .1f}), // Same as 19
-
-            // nose face (blue) - Indices 24 to 29
-            Mesh::Vertex(24,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
-            Mesh::Vertex(25,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
-            Mesh::Vertex(26,{-.5f,  .5f, 0.5f}, {.1f, .1f, .8f}),
-            Mesh::Vertex(27,{-.5f, -.5f, 0.5f}, {.1f, .1f, .8f}), // Same as 24
-            Mesh::Vertex(28,{ .5f, -.5f, 0.5f}, {.1f, .1f, .8f}),
-            Mesh::Vertex(29,{ .5f,  .5f, 0.5f}, {.1f, .1f, .8f}), // Same as 25
-
-            // tail face (green) - Indices 30 to 35
-            Mesh::Vertex(30,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
-            Mesh::Vertex(31,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
-            Mesh::Vertex(32,{-.5f,  .5f, -0.5f}, {.1f, .8f, .1f}),
-            Mesh::Vertex(33,{-.5f, -.5f, -0.5f}, {.1f, .8f, .1f}), // Same as 30
-            Mesh::Vertex(34,{ .5f, -.5f, -0.5f}, {.1f, .8f, .1f}),
-            Mesh::Vertex(35,{ .5f,  .5f, -0.5f}, {.1f, .8f, .1f}), // Same as 31
+        // Define unique vertices for a cube
+        std::vector<Mesh::Vertex> vertices = {
+            // Front face
+            Mesh::Vertex(0, {-0.5f, -0.5f,  0.5f}, {0.1f, 0.1f, 0.8f}, { 0.0f,  0.0f,  1.0f}, {0.0f, 1.0f}), // Bottom-left
+            Mesh::Vertex(1, { 0.5f, -0.5f,  0.5f}, {0.1f, 0.1f, 0.8f}, { 0.0f,  0.0f,  1.0f}, {1.0f, 1.0f}), // Bottom-right
+            Mesh::Vertex(2, { 0.5f,  0.5f,  0.5f}, {0.1f, 0.1f, 0.8f}, { 0.0f,  0.0f,  1.0f}, {1.0f, 0.0f}), // Top-right
+            Mesh::Vertex(3, {-0.5f,  0.5f,  0.5f}, {0.1f, 0.1f, 0.8f}, { 0.0f,  0.0f,  1.0f}, {0.0f, 0.0f}), // Top-left
+            // Back face
+            Mesh::Vertex(4, {-0.5f, -0.5f, -0.5f}, {0.1f, 0.8f, 0.1f}, { 0.0f,  0.0f, -1.0f}, {1.0f, 1.0f}), // Bottom-left
+            Mesh::Vertex(5, { 0.5f, -0.5f, -0.5f}, {0.1f, 0.8f, 0.1f}, { 0.0f,  0.0f, -1.0f}, {0.0f, 1.0f}), // Bottom-right
+            Mesh::Vertex(6, { 0.5f,  0.5f, -0.5f}, {0.1f, 0.8f, 0.1f}, { 0.0f,  0.0f, -1.0f}, {0.0f, 0.0f}), // Top-right
+            Mesh::Vertex(7, {-0.5f,  0.5f, -0.5f}, {0.1f, 0.8f, 0.1f}, { 0.0f,  0.0f, -1.0f}, {1.0f, 0.0f}), // Top-left
+            // Left face
+            Mesh::Vertex(8, {-0.5f, -0.5f, -0.5f}, {0.9f, 0.9f, 0.9f}, {-1.0f,  0.0f,  0.0f}, {0.0f, 1.0f}), // Bottom-front
+            Mesh::Vertex(9, {-0.5f, -0.5f,  0.5f}, {0.9f, 0.9f, 0.9f}, {-1.0f,  0.0f,  0.0f}, {1.0f, 1.0f}), // Bottom-back
+            Mesh::Vertex(10,{-0.5f,  0.5f,  0.5f}, {0.9f, 0.9f, 0.9f}, {-1.0f,  0.0f,  0.0f}, {1.0f, 0.0f}), // Top-back
+            Mesh::Vertex(11,{-0.5f,  0.5f, -0.5f}, {0.9f, 0.9f, 0.9f}, {-1.0f,  0.0f,  0.0f}, {0.0f, 0.0f}), // Top-front
+            // Right face
+            Mesh::Vertex(12,{ 0.5f, -0.5f, -0.5f}, {0.8f, 0.8f, 0.1f}, { 1.0f,  0.0f,  0.0f}, {1.0f, 1.0f}), // Bottom-front
+            Mesh::Vertex(13,{ 0.5f, -0.5f,  0.5f}, {0.8f, 0.8f, 0.1f}, { 1.0f,  0.0f,  0.0f}, {0.0f, 1.0f}), // Bottom-back
+            Mesh::Vertex(14,{ 0.5f,  0.5f,  0.5f}, {0.8f, 0.8f, 0.1f}, { 1.0f,  0.0f,  0.0f}, {0.0f, 0.0f}), // Top-back
+            Mesh::Vertex(15,{ 0.5f,  0.5f, -0.5f}, {0.8f, 0.8f, 0.1f}, { 1.0f,  0.0f,  0.0f}, {1.0f, 0.0f}), // Top-front
+            // Top face (y is up)
+            Mesh::Vertex(16,{-0.5f,  0.5f,  0.5f}, {0.8f, 0.1f, 0.1f}, { 0.0f,  1.0f,  0.0f}, {0.0f, 1.0f}), // Front-left
+            Mesh::Vertex(17,{ 0.5f,  0.5f,  0.5f}, {0.8f, 0.1f, 0.1f}, { 0.0f,  1.0f,  0.0f}, {1.0f, 1.0f}), // Front-right
+            Mesh::Vertex(18,{ 0.5f,  0.5f, -0.5f}, {0.8f, 0.1f, 0.1f}, { 0.0f,  1.0f,  0.0f}, {1.0f, 0.0f}), // Back-right
+            Mesh::Vertex(19,{-0.5f,  0.5f, -0.5f}, {0.8f, 0.1f, 0.1f}, { 0.0f,  1.0f,  0.0f}, {0.0f, 0.0f}), // Back-left
+            // Bottom face (y is down)
+            Mesh::Vertex(20,{-0.5f, -0.5f,  0.5f}, {0.9f, 0.6f, 0.1f}, { 0.0f, -1.0f,  0.0f}, {0.0f, 0.0f}), // Front-left
+            Mesh::Vertex(21,{ 0.5f, -0.5f,  0.5f}, {0.9f, 0.6f, 0.1f}, { 0.0f, -1.0f,  0.0f}, {1.0f, 0.0f}), // Front-right
+            Mesh::Vertex(22,{ 0.5f, -0.5f, -0.5f}, {0.9f, 0.6f, 0.1f}, { 0.0f, -1.0f,  0.0f}, {1.0f, 1.0f}), // Back-right
+            Mesh::Vertex(23,{-0.5f, -0.5f, -0.5f}, {0.9f, 0.6f, 0.1f}, { 0.0f, -1.0f,  0.0f}, {0.0f, 1.0f})  // Back-left
         };
+
         for (auto& v : vertices) {
-          v.position += offset;
+            v.position += offset;
         }
-        Model::Builder builder{};
-        builder.vertices = vertices;
-        return std::make_shared<Model>(builder); // Use make_shared if intended
-      }
 
-      // Note: createCornellBox needs similar update to use unique vertices and indices
-      // For brevity, updating only createCubeModel here. Apply similar logic if using createCornellBox.
-	std::shared_ptr<Model> createCornellBox() {
-         // Similar structure: define unique vertices, then indices
-         // Using simplified vertices for now - replace with actual cornell box setup
-         std::vector<Mesh::Vertex> vertices{
-       
-            // left face (red) - Indices 0 to 5
-            Mesh::Vertex(0, {-.5f, -.5f, -.5f}, {1.f, 0.f, 0.f}),
-            Mesh::Vertex(1, {-.5f,  .5f,  .5f}, {1.f, 0.f, 0.f}),
-            Mesh::Vertex(2, {-.5f, -.5f,  .5f}, {1.f, 0.f, 0.f}),
-            Mesh::Vertex(3, {-.5f, -.5f, -.5f}, {1.f, 0.f, 0.f}), // Same as 0
-            Mesh::Vertex(4, {-.5f,  .5f, -.5f}, {1.f, 0.f, 0.f}),
-            Mesh::Vertex(5, {-.5f,  .5f,  .5f}, {1.f, 0.f, 0.f}), // Same as 1
-
-            // right face (green) - Indices 6 to 11
-            Mesh::Vertex(6, {.5f, -.5f, -.5f}, {0.f, 1.f, 0.f}),
-            Mesh::Vertex(7, {.5f,  .5f,  .5f}, {0.f, 1.f, 0.f}),
-            Mesh::Vertex(8, {.5f, -.5f,  .5f}, {0.f, 1.f, 0.f}),
-            Mesh::Vertex(9, {.5f, -.5f, -.5f}, {0.f, 1.f, 0.f}), // Same as 6
-            Mesh::Vertex(10,{ .5f,  .5f, -.5f}, {0.f, 1.f, 0.f}),
-            Mesh::Vertex(11,{ .5f,  .5f,  .5f}, {0.f, 1.f, 0.f}), // Same as 7
-
-            // top face (white) - Indices 12 to 17
-            Mesh::Vertex(12,{-.5f, -.5f, -.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(13,{ .5f, -.5f,  .5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(14,{-.5f, -.5f,  .5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(15,{-.5f, -.5f, -.5f}, {.84f, .84f, .84f}), // Same as 12
-            Mesh::Vertex(16,{ .5f, -.5f, -.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(17,{ .5f, -.5f,  .5f}, {.84f, .84f, .84f}), // Same as 13
-
-            // bottom face (white) - Indices 18 to 23
-            Mesh::Vertex(18,{-.5f,  .5f, -.5f}, {.54f, .54f, .54f}),
-            Mesh::Vertex(19,{ .5f,  .5f,  .5f}, {.54f, .54f, .54f}),
-            Mesh::Vertex(20,{-.5f,  .5f,  .5f}, {.54f, .54f, .54f}),
-            Mesh::Vertex(21,{-.5f,  .5f, -.5f}, {.54f, .54f, .54f}), // Same as 18
-            Mesh::Vertex(22,{ .5f,  .5f, -.5f}, {.54f, .54f, .54f}),
-            Mesh::Vertex(23,{ .5f,  .5f,  .5f}, {.54f, .54f, .54f}), // Same as 19
-
-            // nose face (white) - Indices 24 to 29
-            Mesh::Vertex(24,{-.5f, -.5f, 0.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(25,{ .5f,  .5f, 0.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(26,{-.5f,  .5f, 0.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(27,{-.5f, -.5f, 0.5f}, {.84f, .84f, .84f}), // Same as 24
-            Mesh::Vertex(28,{ .5f, -.5f, 0.5f}, {.84f, .84f, .84f}),
-            Mesh::Vertex(29,{ .5f,  .5f, 0.5f}, {.84f, .84f, .84f}), // Same as 25
-         };
+        // Define indices for the cube (6 faces, 2 triangles per face)
+        std::vector<uint32_t> indices = {
+             0,  1,  2,  0,  2,  3, // Front
+             4,  5,  6,  4,  6,  7, // Back
+             8,  9, 10,  8, 10, 11, // Left
+            12, 13, 14, 12, 14, 15, // Right
+            16, 17, 18, 16, 18, 19, // Top
+            20, 21, 22, 20, 22, 23  // Bottom
+        };
 
         Model::Builder builder{};
         builder.vertices = vertices;
-        return std::make_shared<Model>(builder); // Use make_shared if intended
-      }
+        builder.indices = indices; // Add indices to builder
+        return std::make_shared<Model>(builder);
+    }
+
+    // Placeholder - Replace with actual Cornell Box geometry
+    std::shared_ptr<Model> createCornellBox() {
+        std::vector<Mesh::Vertex> vertices{ /* ... Cornell Box vertices ... */ };
+        std::vector<uint32_t> indices{ /* ... Cornell Box indices ... */ };
+        // Example: Use cube for now
+        return createCubeModel({0.f, 0.f, 0.f});
+    }
 
     // Load initial game scene data
     void loadGameObjects()
     {
-         // Create models using make_shared or make_unique as appropriate
-        // std::shared_ptr<Model> mod_cube = createCubeModel({0.f, 0.f, 2.5f}); // Example Cube
-
-        // Load OBJ model - ensure path is correct relative to executable
         std::shared_ptr<Model> mod_obj = nullptr;
         try {
-            // Adjust path as needed - this path is relative to the build output usually
+            // Adjust path based on execution directory relative to assets
+            std::string modelPath = "../../../kinesis/assets/models"; // Common relative path
             #ifdef _WIN32
-            mod_obj = std::make_shared<Model>("../../kinesis/assets/models", "bunny_1k.obj"); // Example path for Windows build
-            #else
-             mod_obj = std::make_shared<Model>("../kinesis/assets/models", "bunny_1k.obj"); // Example path for other systems
-             // Alternatively use absolute paths or configure paths better
-             #endif
+             // Windows might have different relative path depending on build setup
+             // modelPath = "../../kinesis/assets/models";
+            #endif
+            mod_obj = std::make_shared<Model>(modelPath, "bunny_1k.obj");
+            // mod_obj = std::make_shared<Model>(modelPath, "smooth_vase.obj");
+            // mod_obj = createCubeModel({0.f, 0.f, 0.f}); // Use cube for testing
         } catch (const std::runtime_error& e) {
              std::cerr << "Failed to load OBJ model: " << e.what() << std::endl;
-             // Handle error - maybe load a default model or exit?
-             // For now, create a fallback cube
-             mod_obj = createCubeModel({0.f, 0.f, 2.5f});
+             mod_obj = createCubeModel({0.f, 0.f, 2.5f}); // Fallback
         }
 
 
-        // Create game object using the loaded model
         GameObject bunny = GameObject::createGameObject("bunny");
-        bunny.model = mod_obj; // Assign the model
-        bunny.transform.translation = {0.f, 0.0f, 2.5f}; // Adjust position
-        bunny.transform.scale = {1.0f, 1.0f, 1.0f};      // Adjust scale
-        bunny.transform.rotation = {0.f, glm::radians(180.f), 0.f}; // Adjust rotation
+        bunny.model = mod_obj;
+        bunny.transform.translation = {0.f, -0.5f, 2.5f}; // Adjusted y
+        bunny.transform.scale = {1.0f, 1.0f, 1.0f};
+        // bunny.transform.scale = {3.0f, 3.0f, 3.0f}; // Make vase bigger
+        bunny.transform.rotation = {0.f, glm::radians(180.f), 0.f};
         gameObjects.push_back(std::move(bunny));
 
-		// Optional: Add Cornell Box or other objects
-		// std::shared_ptr<Model> mod_cornell = createCornellBox();
-		// GameObject cornell_box = GameObject::createGameObject("cornell_box");
-		// cornell_box.model = mod_cornell;
-		// cornell_box.transform.translation = {0.f,0.f,2.5f};
-		// cornell_box.transform.scale = {2.f,2.f,2.f};
-		// gameObjects.push_back(std::move(cornell_box));
+        // Add a floor plane
+        // std::shared_ptr<Model> floorModel = createPlaneModel(5.0f); // Need createPlaneModel function
+        // GameObject floor = GameObject::createGameObject("floor");
+        // floor.model = floorModel;
+        // floor.transform.translation = {0.f, -0.5f, 2.5f};
+        // gameObjects.push_back(std::move(floor));
     }
 
 } // namespace Kinesis

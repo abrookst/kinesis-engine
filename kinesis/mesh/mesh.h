@@ -50,12 +50,7 @@ namespace Kinesis::Mesh {
         std::vector<uint32_t> m_indices;
         std::vector<Material*> m_materials; // Owns the materials loaded from the file
 
-        // Optional: Background color parsed from the file
-        // glm::vec3 m_backgroundColor{1.0f, 1.0f, 1.0f};
-
-        // --- Private Helper Methods ---
-        // Example: bool parseMtl(const std::string& mtlFilePath, const std::string& basePath);
-        // (You would need to implement MTL parsing logic here or use an existing library)
+        bool parseMtl(const std::string& mtlFilePath, const std::string& basePath);
 
     }; // class Mesh
 

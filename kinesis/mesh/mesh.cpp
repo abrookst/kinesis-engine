@@ -170,13 +170,8 @@ namespace Kinesis::Mesh {
                      std::string mtlFilePath = basePath.empty() ? mtlFileName : basePath + "/" + mtlFileName; // Combine paths
                      std::cout << "  Found Material Library: " << mtlFilePath << std::endl;
                      // TODO: Implement MTL parsing function call here
-                     // parseMtl(mtlFilePath, basePath);
+                     parseMtl(mtlFilePath, basePath);
                      // For now, create a placeholder default material
-                     if (m_materials.empty()) {
-                         // Use explicit glm::vec3 construction for single-float initializers
-                         m_materials.push_back(new Material("", {0.8f, 0.8f, 0.8f}, glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), 0.5f, 1.5f, MaterialType::DIFFUSE));
-                         std::cout << "  (MTL parsing not implemented, using default material)" << std::endl;
-                     }
                  } else {
                       std::cerr << "Warning: mtllib token found but no filename specified." << std::endl;
                  }
@@ -226,7 +221,94 @@ namespace Kinesis::Mesh {
         return true;
     }
 
-    // TODO: Implement MTL parsing logic if needed
-    // bool Mesh::parseMtl(const std::string& mtlFilePath, const std::string& basePath) { ... }
+    bool Mesh::parseMtl(const std::string& mtlFilePath, const std::string& /*basePath*/) {
+        std::ifstream mtlfile(mtlFilePath);
+        if (!mtlfile.is_open()) {
+            std::cerr << "ERROR! Cannot open MTL file: " << mtlFilePath << std::endl;
+            return false;
+        }
+
+        std::cout << "Parsing Material Library: " << mtlFilePath << std::endl;
+
+        Material* currentMaterial = nullptr;
+        std::string line;
+
+        while (std::getline(mtlfile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            ss >> token;
+
+            if (token == "newmtl") {
+                std::string name;
+                ss >> name;
+                 // Create a new material (placeholder values)
+                 currentMaterial = new Material(
+                    name,
+                    glm::vec3(0.8f, 0.8f, 0.8f), // Diffuse
+                    glm::vec3(0.0f),             // Reflective
+                    glm::vec3(0.0f),             // Transmissive
+                    glm::vec3(0.0f),             // Emissive
+                    0.5f,                        // Roughness
+                    1.5f,                        // IOR
+                    MaterialType::DIFFUSE        // Type
+                );
+                 m_materials.push_back(currentMaterial);
+                 std::cout << "  Defined material: " << name << std::endl;
+            } else if (token == "Kd" && currentMaterial) { // Diffuse color
+                glm::vec3 color;
+                ss >> color.x >> color.y >> color.z;
+                // TODO: Update currentMaterial->diffuseColor (requires adding setter or modifying constructor/material management)
+                std::cout << "    Kd: " << color.x << " " << color.y << " " << color.z << std::endl;
+            } else if (token == "Ks" && currentMaterial) { // Specular color
+                 glm::vec3 color;
+                 ss >> color.x >> color.y >> color.z;
+                 // TODO: Update currentMaterial->reflectiveColor
+                 std::cout << "    Ks: " << color.x << " " << color.y << " " << color.z << std::endl;
+            } else if (token == "Ke" && currentMaterial) { // Emissive color
+                glm::vec3 color;
+                ss >> color.x >> color.y >> color.z;
+                 // TODO: Update currentMaterial->emissiveColor
+                 std::cout << "    Ke: " << color.x << " " << color.y << " " << color.z << std::endl;
+            } else if (token == "Ni" && currentMaterial) { // Index of Refraction
+                 float ior;
+                 ss >> ior;
+                 // TODO: Update currentMaterial->indexOfRefraction
+                 std::cout << "    Ni: " << ior << std::endl;
+            } else if (token == "Ns" && currentMaterial) { // Specular Exponent (related to roughness, conversion needed)
+                 float ns;
+                 ss >> ns;
+                 // Roughness = sqrt(2 / (Ns + 2)) is a common approximation
+                 float roughness = sqrtf(2.0f / (ns + 2.0f));
+                 // TODO: Update currentMaterial->roughness
+                 std::cout << "    Ns: " << ns << " (Roughness approx: " << roughness << ")" << std::endl;
+            } else if (token == "d" && currentMaterial) { // Dissolve (Opacity)
+                 float d;
+                 ss >> d;
+                 // TODO: Handle opacity/transparency if needed
+                 std::cout << "    d: " << d << std::endl;
+            } else if (token == "Tr" && currentMaterial) { // Transparency (alternative to d)
+                 float tr;
+                 ss >> tr;
+                 // TODO: Handle opacity/transparency if needed (Tr = 1-d)
+                 std::cout << "    Tr: " << tr << std::endl;
+             } else if (token == "illum" && currentMaterial) { // Illumination model
+                  int model;
+                  ss >> model;
+                  // TODO: Set material type based on illumination model (e.g., illum 2 often means standard phong/blinn-phong)
+                  std::cout << "    illum: " << model << std::endl;
+             } else if (token == "map_Kd" && currentMaterial) { // Diffuse texture map
+                 std::string texFile;
+                 std::getline(ss, texFile);
+                 texFile.erase(0, texFile.find_first_not_of(" \t"));
+                  // TODO: Store texture filename in currentMaterial
+                  std::cout << "    map_Kd: " << texFile << std::endl;
+             }
+             // Add handling for other MTL tokens (map_Ks, map_Ke, map_bump, etc.) as needed
+        }
+
+        mtlfile.close();
+        std::cout << "Finished Parsing Material Library. Found " << m_materials.size() << " materials." << std::endl;
+        return true; // Return true even if empty, indicates file was processed
+    }
 
 } // namespace Kinesis::Mesh

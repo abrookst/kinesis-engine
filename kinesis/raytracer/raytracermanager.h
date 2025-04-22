@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory> // For std::unique_ptr
 
+
 namespace Kinesis::RayTracerManager {
     // --- Existing Structs ---
     struct AccelerationStructure {
@@ -63,7 +64,7 @@ namespace Kinesis::RayTracerManager {
     void cleanup();
     void allocateAndUpdateRtDescriptorSet(VkAccelerationStructureKHR tlasHandle, VkBuffer camBuffer, VkDeviceSize camBufSize);
     void updateDescriptorSet(VkAccelerationStructureKHR tlasHandle, VkImageView outputImgView, VkBuffer camBuffer, VkDeviceSize camBufSize /*, other resources...*/);
-    void bind(VkCommandBuffer commandBuffer); // Should bind pipeline AND descriptor set
+    void bind(VkCommandBuffer commandBuffer, VkDescriptorSet globalSet); // Should bind pipeline AND descriptor set
     uint64_t getBufferDeviceAddress(VkBuffer buffer); // Make public if needed outside
     ScratchBuffer create_scratch_buffer(VkDeviceSize size);
 	void delete_scratch_buffer(ScratchBuffer &scratch_buffer);

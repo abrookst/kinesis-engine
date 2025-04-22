@@ -19,10 +19,22 @@
 #include "buffer.h"
 #include "gbuffer.h"    // For GBuffer data access in descriptor update
 
-// --- Function Pointers Removed - using Volk loaded functions directly ---
-// PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = nullptr;
-// PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
-// ... (rest of PFN definitions removed)
+// --- Function Pointers for KHR Extensions ---
+// Declare function pointers using a prefix (e.g., pfn) to avoid name conflicts
+// Initialize them to nullptr. They will be loaded in the initialize() function.
+PFN_vkGetBufferDeviceAddressKHR pfnGetBufferDeviceAddressKHR = nullptr;
+PFN_vkCmdBuildAccelerationStructuresKHR pfnCmdBuildAccelerationStructuresKHR = nullptr;
+PFN_vkBuildAccelerationStructuresKHR pfnBuildAccelerationStructuresKHR = nullptr; // Note: Not typically used directly in basic setup
+PFN_vkCreateAccelerationStructureKHR pfnCreateAccelerationStructureKHR = nullptr;
+PFN_vkDestroyAccelerationStructureKHR pfnDestroyAccelerationStructureKHR = nullptr;
+PFN_vkGetAccelerationStructureBuildSizesKHR pfnGetAccelerationStructureBuildSizesKHR = nullptr;
+PFN_vkGetAccelerationStructureDeviceAddressKHR pfnGetAccelerationStructureDeviceAddressKHR = nullptr;
+PFN_vkCmdTraceRaysKHR pfnCmdTraceRaysKHR = nullptr;
+PFN_vkGetRayTracingShaderGroupHandlesKHR pfnGetRayTracingShaderGroupHandlesKHR = nullptr;
+PFN_vkCreateRayTracingPipelinesKHR pfnCreateRayTracingPipelinesKHR = nullptr;
+// Add others if needed (e.g., copy/query functions)
+PFN_vkCmdWriteAccelerationStructuresPropertiesKHR pfnCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
+PFN_vkCopyAccelerationStructureKHR pfnCopyAccelerationStructureKHR = nullptr;
 
 
 namespace Kinesis::RayTracerManager {
@@ -50,10 +62,10 @@ namespace Kinesis::RayTracerManager {
 
     // --- Helper Functions ---
     uint64_t getBufferDeviceAddress(VkBuffer buffer) {
-        // Check removed, assuming Volk loaded successfully
-        // // if (!vkGetBufferDeviceAddressKHR) {
-        // //      throw std::runtime_error("vkGetBufferDeviceAddressKHR function pointer not loaded!");
-        // // }
+        // Use the loaded function pointer (with pfn prefix)
+        if (!pfnGetBufferDeviceAddressKHR) {
+             throw std::runtime_error("vkGetBufferDeviceAddressKHR function pointer not loaded!");
+        }
         if (buffer == VK_NULL_HANDLE) {
              std::cerr << "Warning: Trying to get address of VK_NULL_HANDLE buffer." << std::endl;
              return 0; // Or handle as error
@@ -61,8 +73,8 @@ namespace Kinesis::RayTracerManager {
         VkBufferDeviceAddressInfoKHR buffer_device_address_info{};
         buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         buffer_device_address_info.buffer = buffer;
-        // Directly call the function - Volk ensures it's available if loaded
-        return vkGetBufferDeviceAddressKHR(g_Device, &buffer_device_address_info);
+        // Call via renamed function pointer
+        return pfnGetBufferDeviceAddressKHR(g_Device, &buffer_device_address_info);
     }
 
     // Forward declarations for internal helpers if needed
@@ -81,6 +93,7 @@ namespace Kinesis::RayTracerManager {
         // Use the global buffer creation helper
         Kinesis::Window::createBuffer(size, bufferInfo.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                                      scratchBuffer.buffer, scratchBuffer.memory);
+        // Get address using the loaded function pointer (via helper)
         scratchBuffer.address = getBufferDeviceAddress(scratchBuffer.buffer);
         return scratchBuffer;
     }
@@ -101,11 +114,14 @@ namespace Kinesis::RayTracerManager {
     void delete_acceleration_structure(AccelerationStructure &acceleration_structure) {
          if (g_Device == VK_NULL_HANDLE) return; // Avoid calls if device is null
 
-         // Call destroy function directly (Volk handles availability)
-        if (acceleration_structure.structure != VK_NULL_HANDLE) { // Removed check for vkDestroyAccelerationStructureKHR assuming Volk loaded
-            vkDestroyAccelerationStructureKHR(g_Device, acceleration_structure.structure, nullptr);
+         // Use the loaded function pointer (with pfn prefix)
+         if (!pfnDestroyAccelerationStructureKHR) {
+             std::cerr << "Warning: vkDestroyAccelerationStructureKHR function pointer not loaded. Cannot destroy Acceleration Structure." << std::endl;
+         } else if (acceleration_structure.structure != VK_NULL_HANDLE) {
+            pfnDestroyAccelerationStructureKHR(g_Device, acceleration_structure.structure, nullptr);
             acceleration_structure.structure = VK_NULL_HANDLE;
-        }
+         }
+
         if (acceleration_structure.buffer != VK_NULL_HANDLE) {
             vkDestroyBuffer(g_Device, acceleration_structure.buffer, nullptr);
             acceleration_structure.buffer = VK_NULL_HANDLE;
@@ -263,18 +279,15 @@ namespace Kinesis::RayTracerManager {
         bindings.push_back({0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, nullptr});
         // Binding 1: Output Image (Storage)
         bindings.push_back({1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 2: Camera UBO
-        // Use the global descriptor set for camera now, so this binding might not be needed here.
-        // Remove this binding if camera is in the global set (Set 0).
-        // bindings.push_back({2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, nullptr});
+        // Binding 2: Camera UBO (REMOVED from this set, assumed in global set 0)
 
-        // Binding 3: G-Buffer Position (adjust binding index if camera removed)
+        // Binding 3: G-Buffer Position
         bindings.push_back({3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 4: G-Buffer Normal (adjust binding index if camera removed)
+        // Binding 4: G-Buffer Normal
         bindings.push_back({4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 5: G-Buffer Albedo (adjust binding index if camera removed)
+        // Binding 5: G-Buffer Albedo
         bindings.push_back({5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 6: G-Buffer Properties (adjust binding index if camera removed)
+        // Binding 6: G-Buffer Properties
         bindings.push_back({6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
          // Add more bindings if needed (e.g., material buffers, scene info)
 
@@ -292,8 +305,10 @@ namespace Kinesis::RayTracerManager {
 
     void createRayTracingPipeline() {
          assert(g_Device != VK_NULL_HANDLE && "Device must be valid");
-         // Check removed, assuming Volk loaded successfully
-         // // assert(vkCreateRayTracingPipelinesKHR != nullptr && "vkCreateRayTracingPipelinesKHR not loaded");
+         // Check if the required function pointer is loaded (with pfn prefix)
+         if (!pfnCreateRayTracingPipelinesKHR) {
+             throw std::runtime_error("vkCreateRayTracingPipelinesKHR function pointer not loaded!");
+         }
 
          // --- Create Pipeline Layout ---
          if (rtPipelineLayout != VK_NULL_HANDLE) {
@@ -415,13 +430,15 @@ namespace Kinesis::RayTracerManager {
          // pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // For pipeline derivatives
          // pipelineInfo.basePipelineIndex = -1;
 
+
+
          if (rtPipeline != VK_NULL_HANDLE) {
              vkDestroyPipeline(g_Device, rtPipeline, nullptr); // Destroy old pipeline if exists
              rtPipeline = VK_NULL_HANDLE;
          }
 
-         // Call function directly (Volk ensures availability)
-         if (vkCreateRayTracingPipelinesKHR(g_Device, VK_NULL_HANDLE, g_PipelineCache, 1, &pipelineInfo, nullptr, &rtPipeline) != VK_SUCCESS) {
+
+         if (pfnCreateRayTracingPipelinesKHR(g_Device, VK_NULL_HANDLE, g_PipelineCache, 1, &pipelineInfo, nullptr, &rtPipeline) != VK_SUCCESS) {
              // Cleanup modules and layout on failure
              vkDestroyShaderModule(g_Device, rgenModule, nullptr);
              vkDestroyShaderModule(g_Device, missModule, nullptr);
@@ -503,6 +520,7 @@ namespace Kinesis::RayTracerManager {
 
 
         // Set up address region for vkCmdTraceRaysKHR
+        // Get address using the loaded function pointer (via helper)
         sbtEntry.addressRegion.deviceAddress = getBufferDeviceAddress(sbtEntry.buffer);
         sbtEntry.addressRegion.stride = sbtEntrySizeAligned; // Stride must be the aligned size
         sbtEntry.addressRegion.size = sbtEntrySizeAligned;   // Size must be the aligned size
@@ -511,8 +529,10 @@ namespace Kinesis::RayTracerManager {
 
     void createShaderBindingTable() {
          assert(rtPipeline != VK_NULL_HANDLE && "Ray tracing pipeline must be created before SBT");
-         // Check removed, assuming Volk loaded successfully
-         // // assert(vkGetRayTracingShaderGroupHandlesKHR != nullptr && "vkGetRayTracingShaderGroupHandlesKHR not loaded");
+         // Check if the required function pointer is loaded (with pfn prefix)
+         if (!pfnGetRayTracingShaderGroupHandlesKHR) {
+             throw std::runtime_error("vkGetRayTracingShaderGroupHandlesKHR function pointer not loaded!");
+         }
          assert(!shader_groups.empty() && "Shader groups must be created before SBT");
 
 
@@ -526,8 +546,8 @@ namespace Kinesis::RayTracerManager {
          const uint32_t dataSize = groupCount * handleSize;
          std::vector<uint8_t> shaderHandleStorage(dataSize);
 
-         // Call function directly (Volk ensures availability)
-         if (vkGetRayTracingShaderGroupHandlesKHR(g_Device, rtPipeline, 0, groupCount, dataSize, shaderHandleStorage.data()) != VK_SUCCESS) {
+         // Call function via loaded pointer (with pfn prefix)
+         if (pfnGetRayTracingShaderGroupHandlesKHR(g_Device, rtPipeline, 0, groupCount, dataSize, shaderHandleStorage.data()) != VK_SUCCESS) {
              throw std::runtime_error("Failed to get ray tracing shader group handles!");
          }
 
@@ -553,8 +573,38 @@ namespace Kinesis::RayTracerManager {
             return;
         }
 
-        // --- Load KHR function pointers (REMOVED - using Volk now) ---
-        // Function pointers loaded via volkLoadDevice in window.cpp
+        // --- Load KHR function pointers using vkGetDeviceProcAddr ---
+        // Make sure g_Device is valid at this point (should be setup in Window::SetupVulkan)
+        assert(g_Device != VK_NULL_HANDLE && "g_Device is null during RayTracerManager initialization");
+
+        // Use renamed variables (pfn prefix)
+        pfnGetBufferDeviceAddressKHR = (PFN_vkGetBufferDeviceAddressKHR)vkGetDeviceProcAddr(g_Device, "vkGetBufferDeviceAddressKHR");
+        pfnCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(g_Device, "vkCmdBuildAccelerationStructuresKHR");
+        pfnCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetDeviceProcAddr(g_Device, "vkCreateAccelerationStructureKHR");
+        pfnDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetDeviceProcAddr(g_Device, "vkDestroyAccelerationStructureKHR");
+        pfnGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetDeviceProcAddr(g_Device, "vkGetAccelerationStructureBuildSizesKHR");
+        pfnGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetDeviceProcAddr(g_Device, "vkGetAccelerationStructureDeviceAddressKHR");
+        pfnCmdTraceRaysKHR = (PFN_vkCmdTraceRaysKHR)vkGetDeviceProcAddr(g_Device, "vkCmdTraceRaysKHR");
+        pfnGetRayTracingShaderGroupHandlesKHR = (PFN_vkGetRayTracingShaderGroupHandlesKHR)vkGetDeviceProcAddr(g_Device, "vkGetRayTracingShaderGroupHandlesKHR");
+        pfnCreateRayTracingPipelinesKHR = (PFN_vkCreateRayTracingPipelinesKHR)vkGetDeviceProcAddr(g_Device, "vkCreateRayTracingPipelinesKHR");
+        pfnCmdWriteAccelerationStructuresPropertiesKHR = (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)vkGetDeviceProcAddr(g_Device, "vkCmdWriteAccelerationStructuresPropertiesKHR");
+        pfnCopyAccelerationStructureKHR = (PFN_vkCopyAccelerationStructureKHR)vkGetDeviceProcAddr(g_Device, "vkCopyAccelerationStructureKHR");
+        // pfnBuildAccelerationStructuresKHR = (PFN_vkBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(g_Device, "vkBuildAccelerationStructuresKHR"); // If needed
+
+
+        // Check if essential pointers were loaded (using renamed variables)
+        if (!pfnGetBufferDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnCreateAccelerationStructureKHR ||
+            !pfnDestroyAccelerationStructureKHR || !pfnGetAccelerationStructureBuildSizesKHR || !pfnGetAccelerationStructureDeviceAddressKHR ||
+            !pfnCmdTraceRaysKHR || !pfnGetRayTracingShaderGroupHandlesKHR || !pfnCreateRayTracingPipelinesKHR) {
+             std::cerr << "Warning: Failed to load one or more required ray tracing function pointers!" << std::endl;
+             // Decide how to handle this: continue with limited functionality, throw, or disable RT.
+             // For now, we'll proceed, but calls might fail later.
+             Kinesis::GUI::raytracing_available = false; // Optionally disable RT if pointers fail
+             std::cerr << "Disabling Ray Tracing due to missing function pointers." << std::endl;
+             return; // Exit initialization if essential pointers are missing
+        }
+        std::cout << "Ray tracing function pointers loaded." << std::endl;
+
 
         // Create command pool for builds (if not already created elsewhere)
         if (buildCommandPool == VK_NULL_HANDLE) {
@@ -619,7 +669,7 @@ namespace Kinesis::RayTracerManager {
     // --- cleanup ---
     void cleanup() {
          // Check device validity before cleanup
-        if (g_Device == VK_NULL_HANDLE /* Removed check for !Kinesis::GUI::raytracing_available as cleanup might be needed even if RT init failed */) return;
+        if (g_Device == VK_NULL_HANDLE) return;
 
 
         std::cout << "Cleaning up Ray Tracing Manager..." << std::endl;
@@ -662,8 +712,9 @@ namespace Kinesis::RayTracerManager {
 
 
         // Destroy Acceleration Structures
+        // Use the helper which now calls the function pointer (pfn prefix)
         if (tlas.structure) {
-            delete_acceleration_structure(tlas); // Handles buffer/memory too
+            delete_acceleration_structure(tlas);
              std::cout << "  - TLAS destroyed." << std::endl;
         } else {
              // Ensure buffer/memory are cleaned up even if structure creation failed
@@ -683,7 +734,7 @@ namespace Kinesis::RayTracerManager {
          }
 
         for (auto& b : blas) {
-             delete_acceleration_structure(b); // Handles buffer/memory too
+             delete_acceleration_structure(b); // Use helper
         }
         blas.clear();
          std::cout << "  - BLASes destroyed." << std::endl;
@@ -770,7 +821,7 @@ namespace Kinesis::RayTracerManager {
 
          // --- Bindings adjusted for removed camera ---
 
-         // 3: G-Buffer Position (now binding 3, check layout definition)
+         // 3: G-Buffer Position (now binding 3)
          gbufferInfos[0].sampler = Kinesis::GBuffer::sampler;
          gbufferInfos[0].imageView = Kinesis::GBuffer::positionAttachment.view;
          gbufferInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Layout must match usage
@@ -845,14 +896,17 @@ namespace Kinesis::RayTracerManager {
 
     // --- traceRays ---
     void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height) {
-        // Add assertions for function pointer and SBT validity if desired
-        // // assert(vkCmdTraceRaysKHR != nullptr); // Not needed with Volk
+        // Check if the required function pointer is loaded (with pfn prefix)
+        if (!pfnCmdTraceRaysKHR) {
+             std::cerr << "Error: vkCmdTraceRaysKHR function pointer not loaded! Cannot trace rays." << std::endl;
+             return; // Or throw
+        }
         assert(rgenSBT.buffer != VK_NULL_HANDLE);
         assert(missSBT.buffer != VK_NULL_HANDLE);
         assert(chitSBT.buffer != VK_NULL_HANDLE);
 
-        // Call function directly (Volk ensures availability)
-        vkCmdTraceRaysKHR(
+        // Call function via loaded pointer (with pfn prefix)
+        pfnCmdTraceRaysKHR(
             commandBuffer,
             &rgenSBT.addressRegion, // RayGen SBT entry info
             &missSBT.addressRegion, // Miss SBT entry info
@@ -932,6 +986,11 @@ namespace Kinesis::RayTracerManager {
 
     // --- create_blas ---
     void create_blas() {
+        // Check required function pointers (with pfn prefix)
+        if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR) {
+            throw std::runtime_error("Required BLAS build function pointers not loaded!");
+        }
+
         // Clean up existing BLAS first
          for (auto& b : blas) delete_acceleration_structure(b);
          blas.clear();
@@ -950,8 +1009,8 @@ namespace Kinesis::RayTracerManager {
                  continue;
             }
 
-            uint64_t vertexBufferAddress = getBufferDeviceAddress(vertexBuffer);
-            uint64_t indexBufferAddress = hasIndices ? getBufferDeviceAddress(indexBuffer) : 0;
+            uint64_t vertexBufferAddress = getBufferDeviceAddress(vertexBuffer); // Uses helper -> pointer
+            uint64_t indexBufferAddress = hasIndices ? getBufferDeviceAddress(indexBuffer) : 0; // Uses helper -> pointer
             uint32_t vertexCount = gameObject.model->getMesh()->numVertices();
             uint32_t indexCount = gameObject.model->getMesh()->numIndices();
             // Calculate primitive count based on indices or vertices
@@ -995,8 +1054,8 @@ namespace Kinesis::RayTracerManager {
 
             VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{};
             buildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-            // Call function directly (Volk ensures availability)
-            vkGetAccelerationStructureBuildSizesKHR(
+            // Call function via loaded pointer (with pfn prefix)
+            pfnGetAccelerationStructureBuildSizesKHR(
                 g_Device,
                 VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, // Build on device
                 &buildGeomInfo,
@@ -1016,8 +1075,8 @@ namespace Kinesis::RayTracerManager {
             createInfo.buffer = blasEntry.buffer;
             createInfo.size = buildSizesInfo.accelerationStructureSize;
             createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-             // Call function directly (Volk ensures availability)
-            if(vkCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &blasEntry.structure) != VK_SUCCESS){
+             // Call function via loaded pointer (with pfn prefix)
+            if(pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &blasEntry.structure) != VK_SUCCESS){
                   // Cleanup buffer/memory if AS creation fails
                   delete_acceleration_structure(blasEntry); // Use helper to clean up
                  throw std::runtime_error("Failed to create BLAS for GameObject '" + gameObject.name + "'!");
@@ -1026,7 +1085,8 @@ namespace Kinesis::RayTracerManager {
             VkAccelerationStructureDeviceAddressInfoKHR addressInfo{};
             addressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
             addressInfo.accelerationStructure = blasEntry.structure;
-            blasEntry.address = vkGetAccelerationStructureDeviceAddressKHR(g_Device, &addressInfo); // Get address of the AS object
+            // Call function via loaded pointer (with pfn prefix)
+            blasEntry.address = pfnGetAccelerationStructureDeviceAddressKHR(g_Device, &addressInfo);
 
 
             // 5. Create Scratch Buffer
@@ -1048,8 +1108,8 @@ namespace Kinesis::RayTracerManager {
              buildRangeInfo.transformOffset = 0; // Offset for transform data (usually 0 for BLAS)
              const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
-             // Call function directly (Volk ensures availability)
-            vkCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildGeomInfo, &pBuildRangeInfo);
+             // Call function via loaded pointer (with pfn prefix)
+            pfnCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildGeomInfo, &pBuildRangeInfo);
 
             // Barrier: Ensure BLAS build completes before scratch buffer is destroyed/reused
             // and before the BLAS is used in a TLAS build.
@@ -1080,9 +1140,14 @@ namespace Kinesis::RayTracerManager {
 
     // --- create_tlas ---
     void create_tlas(bool allow_update) {
+         // Check required function pointers (with pfn prefix)
+         if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR) {
+             throw std::runtime_error("Required TLAS build function pointers not loaded!");
+         }
+
          // Delete previous TLAS and instance buffer if they exist
          if (tlas.structure != VK_NULL_HANDLE) {
-             delete_acceleration_structure(tlas); // Cleans up buffer/memory too
+             delete_acceleration_structure(tlas); // Cleans up buffer/memory too using pointer
              tlas = {}; // Reset struct
          }
          if (instances_buffer != VK_NULL_HANDLE) {
@@ -1099,16 +1164,21 @@ namespace Kinesis::RayTracerManager {
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         uint32_t customInstanceIndex = 0; // Track index for shaders (e.g., material lookup)
         // Ensure blas vector size matches gameObjects or use a map
-        if (blas.size() != Kinesis::gameObjects.size()) {
-             std::cerr << "Warning: Mismatch between number of BLAS (" << blas.size()
-                       << ") and game objects (" << Kinesis::gameObjects.size()
-                       << "). TLAS might be incomplete or incorrect." << std::endl;
-             // Adjust logic here, maybe map BLAS to objects differently
+        // Basic check: ensure we don't access blas out of bounds
+        if (blas.size() < Kinesis::gameObjects.size()) {
+             std::cerr << "Warning: Fewer BLAS (" << blas.size()
+                       << ") than game objects (" << Kinesis::gameObjects.size()
+                       << "). TLAS might be incomplete." << std::endl;
         }
 
         for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i) {
-             // Ensure object has model and a corresponding BLAS was created
-             if (!gameObjects[i].model || i >= blas.size() || blas[i].address == 0) continue;
+             // Ensure object has model and a corresponding BLAS was created and exists at index i
+             if (i >= blas.size() || !gameObjects[i].model || blas[i].address == 0) {
+                 // Optionally log skipped object
+                 // std::cout << "Skipping TLAS instance for object " << i << std::endl;
+                 continue;
+             }
+
 
              VkAccelerationStructureInstanceKHR instance{};
              // Convert glm::mat4 to VkTransformMatrixKHR (row-major)
@@ -1180,6 +1250,7 @@ namespace Kinesis::RayTracerManager {
          vkDestroyBuffer(g_Device, stagingBuffer, nullptr);
          vkFreeMemory(g_Device, stagingMemory, nullptr);
 
+        // Get address using loaded pointer (via helper)
         uint64_t instanceBufferAddr = getBufferDeviceAddress(instances_buffer);
 
         // Define TLAS geometry (references the instances buffer)
@@ -1206,8 +1277,8 @@ namespace Kinesis::RayTracerManager {
          uint32_t instanceCount = static_cast<uint32_t>(instances.size());
          VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{};
          buildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-          // Call function directly (Volk ensures availability)
-         vkGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeomInfo, &instanceCount, &buildSizesInfo);
+          // Call function via loaded pointer (with pfn prefix)
+         pfnGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeomInfo, &instanceCount, &buildSizesInfo);
 
 
         // Create TLAS buffer and object
@@ -1221,16 +1292,16 @@ namespace Kinesis::RayTracerManager {
         createInfo.buffer = tlas.buffer;
         createInfo.size = buildSizesInfo.accelerationStructureSize;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-         // Call function directly (Volk ensures availability)
-        if (vkCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &tlas.structure) != VK_SUCCESS) {
-            delete_acceleration_structure(tlas); // Cleanup buffer/memory
+         // Call function via loaded pointer (with pfn prefix)
+        if (pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &tlas.structure) != VK_SUCCESS) {
+            delete_acceleration_structure(tlas); // Cleanup buffer/memory using pointer
             throw std::runtime_error("Failed to create TLAS!");
         }
-        // Get TLAS address after creation
+        // Get TLAS address after creation using loaded pointer (with pfn prefix)
         VkAccelerationStructureDeviceAddressInfoKHR tlasAddressInfo{};
         tlasAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
         tlasAddressInfo.accelerationStructure = tlas.structure;
-        tlas.address = vkGetAccelerationStructureDeviceAddressKHR(g_Device, &tlasAddressInfo);
+        tlas.address = pfnGetAccelerationStructureDeviceAddressKHR(g_Device, &tlasAddressInfo);
 
 
         // Create scratch buffer for TLAS build
@@ -1252,8 +1323,8 @@ namespace Kinesis::RayTracerManager {
          buildRangeInfo.transformOffset = 0; // Not used for instances
          const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
-         // Call function directly (Volk ensures availability)
-        vkCmdBuildAccelerationStructuresKHR(cmdBufBuild, 1, &buildGeomInfo, &pBuildRangeInfo);
+         // Call function via loaded pointer (with pfn prefix)
+        pfnCmdBuildAccelerationStructuresKHR(cmdBufBuild, 1, &buildGeomInfo, &pBuildRangeInfo);
 
         // Barrier: Ensure TLAS build completes before scratch is deleted and before TLAS is used for tracing
         VkMemoryBarrier barrier{};

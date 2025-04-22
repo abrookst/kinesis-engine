@@ -389,6 +389,18 @@ namespace Kinesis::Window
                 std::cout << "Enabling raytracing device extensions..." << std::endl;
             }
 
+            if (Kinesis::GUI::raytracing_available) {
+                // Add required RT extensions to device_extensions vector
+                device_extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+                device_extensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+                device_extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+                device_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+                device_extensions.push_back(VK_KHR_SPIRV_1_4_EXTENSION_NAME); // Check if needed by shaders
+                device_extensions.push_back(VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME); // Check if needed
+            
+                std::cout << "Enabling required ray tracing device extensions." << std::endl;
+            }
+
             const float queue_priority[] = {1.0f};
             VkDeviceQueueCreateInfo queue_info[1] = {};
             queue_info[0].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -427,25 +439,30 @@ namespace Kinesis::Window
                 // Initialize the enabled features structs
                 enabledAccelerationStructureFeatures = {}; // Zero-initialize
                 enabledAccelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-                enabledAccelerationStructureFeatures.accelerationStructure = supportedAccelFeatures.accelerationStructure; // Enable if supported
-
+                enabledAccelerationStructureFeatures.accelerationStructure = supportedAccelFeatures.accelerationStructure; // Enable IF supported
+            
                 enabledRayTracingPipelineFeatures = {}; // Zero-initialize
                 enabledRayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-                enabledRayTracingPipelineFeatures.rayTracingPipeline = supportedRtPipelineFeatures.rayTracingPipeline; // Enable if supported
-
+                enabledRayTracingPipelineFeatures.rayTracingPipeline = supportedRtPipelineFeatures.rayTracingPipeline; // Enable IF supported
+            
                 enabledBufferDeviceAddressFeatures = {}; // Zero-initialize
                 enabledBufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
-                enabledBufferDeviceAddressFeatures.bufferDeviceAddress = supportedBufferAddrFeatures.bufferDeviceAddress; // Enable if supported
-
-                // Chain the *enabled* features structs
+                enabledBufferDeviceAddressFeatures.bufferDeviceAddress = supportedBufferAddrFeatures.bufferDeviceAddress; // Enable IF supported
+            
+                // **Chain the ENABLED features**
                 enabledAccelerationStructureFeatures.pNext = &enabledRayTracingPipelineFeatures;
                 enabledRayTracingPipelineFeatures.pNext = &enabledBufferDeviceAddressFeatures;
-
-                // Link the chain to the device create info's pNext
+                enabledBufferDeviceAddressFeatures.pNext = nullptr; // End of RT chain
+            
+                // **Link the start of the chain to the main create_info**
                 create_info.pNext = &enabledAccelerationStructureFeatures;
-
-                std::cout << "Chaining Raytracing features for logical device creation." << std::endl;
+            
+                std::cout << "Chaining enabled Raytracing features for logical device creation." << std::endl;
             }
+            else{
+                create_info.pNext = nullptr;
+            }
+
 
             err = vkCreateDevice(g_PhysicalDevice, &create_info, g_Allocator, &g_Device);
             check_vk_result(err);

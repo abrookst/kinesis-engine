@@ -13,6 +13,7 @@ namespace Kinesis::GUI
     extern bool show_toolbar;
     extern bool dark_mode;
     extern bool raytracing_available;
+    extern bool enable_raytracing_pass;
     extern ImVec4 clear_color;
 
     /**

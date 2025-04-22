@@ -11,13 +11,13 @@
 #include "kinesis.h" // Include kinesis.h for globals like g_Device, g_Allocator etc.
 #include "RayTracerManager.h"
 #include "GUI.h"
-#include "mesh/mesh.h" // Needed for geometry info
+#include "mesh/mesh.h"   // Needed for geometry info
 #include "mesh/vertex.h" // Include Vertex definition
-#include "gameobject.h" // Needed for gameObjects global
-#include "window.h"     // For createBuffer, findMemoryType, etc.
-#include "pipeline.h"   // For readFile
+#include "gameobject.h"  // Needed for gameObjects global
+#include "window.h"      // For createBuffer, findMemoryType, etc.
+#include "pipeline.h"    // For readFile
 #include "buffer.h"
-#include "gbuffer.h"    // For GBuffer data access in descriptor update
+#include "gbuffer.h" // For GBuffer data access in descriptor update
 
 // --- Function Pointers for KHR Extensions ---
 // Declare function pointers using a prefix (e.g., pfn) to avoid name conflicts
@@ -36,8 +36,8 @@ PFN_vkCreateRayTracingPipelinesKHR pfnCreateRayTracingPipelinesKHR = nullptr;
 PFN_vkCmdWriteAccelerationStructuresPropertiesKHR pfnCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
 PFN_vkCopyAccelerationStructureKHR pfnCopyAccelerationStructureKHR = nullptr;
 
-
-namespace Kinesis::RayTracerManager {
+namespace Kinesis::RayTracerManager
+{
 
     // --- Define static/global variables declared extern in the header ---
     VkDescriptorSetLayout rtDescriptorSetLayout = VK_NULL_HANDLE;
@@ -54,21 +54,24 @@ namespace Kinesis::RayTracerManager {
     ShaderBindingTableEntry rgenSBT{};
     ShaderBindingTableEntry missSBT{};
     ShaderBindingTableEntry chitSBT{};
+    ShaderBindingTableEntry callableSBT{};
     RTOutput rtOutput = {}; // Default initialize
 
     // Command pool for builds (can be specific to RTManager or shared)
     VkCommandPool buildCommandPool = VK_NULL_HANDLE; // Needs definition
 
-
     // --- Helper Functions ---
-    uint64_t getBufferDeviceAddress(VkBuffer buffer) {
+    uint64_t getBufferDeviceAddress(VkBuffer buffer)
+    {
         // Use the loaded function pointer (with pfn prefix)
-        if (!pfnGetBufferDeviceAddressKHR) {
-             throw std::runtime_error("vkGetBufferDeviceAddressKHR function pointer not loaded!");
+        if (!pfnGetBufferDeviceAddressKHR)
+        {
+            throw std::runtime_error("vkGetBufferDeviceAddressKHR function pointer not loaded!");
         }
-        if (buffer == VK_NULL_HANDLE) {
-             std::cerr << "Warning: Trying to get address of VK_NULL_HANDLE buffer." << std::endl;
-             return 0; // Or handle as error
+        if (buffer == VK_NULL_HANDLE)
+        {
+            std::cerr << "Warning: Trying to get address of VK_NULL_HANDLE buffer." << std::endl;
+            return 0; // Or handle as error
         }
         VkBufferDeviceAddressInfoKHR buffer_device_address_info{};
         buffer_device_address_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -81,7 +84,8 @@ namespace Kinesis::RayTracerManager {
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
-    ScratchBuffer create_scratch_buffer(VkDeviceSize size) {
+    ScratchBuffer create_scratch_buffer(VkDeviceSize size)
+    {
         ScratchBuffer scratchBuffer;
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -92,78 +96,93 @@ namespace Kinesis::RayTracerManager {
 
         // Use the global buffer creation helper
         Kinesis::Window::createBuffer(size, bufferInfo.usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                     scratchBuffer.buffer, scratchBuffer.memory);
+                                      scratchBuffer.buffer, scratchBuffer.memory);
         // Get address using the loaded function pointer (via helper)
         scratchBuffer.address = getBufferDeviceAddress(scratchBuffer.buffer);
         return scratchBuffer;
     }
 
-    void delete_scratch_buffer(ScratchBuffer &scratch_buffer) {
-         if (g_Device == VK_NULL_HANDLE) return; // Avoid calls if device is null
-        if (scratch_buffer.buffer != VK_NULL_HANDLE) {
+    void delete_scratch_buffer(ScratchBuffer &scratch_buffer)
+    {
+        if (g_Device == VK_NULL_HANDLE)
+            return; // Avoid calls if device is null
+        if (scratch_buffer.buffer != VK_NULL_HANDLE)
+        {
             vkDestroyBuffer(g_Device, scratch_buffer.buffer, nullptr);
             scratch_buffer.buffer = VK_NULL_HANDLE;
         }
-        if (scratch_buffer.memory != VK_NULL_HANDLE) {
+        if (scratch_buffer.memory != VK_NULL_HANDLE)
+        {
             vkFreeMemory(g_Device, scratch_buffer.memory, nullptr);
             scratch_buffer.memory = VK_NULL_HANDLE;
         }
         scratch_buffer.address = 0;
     }
 
-    void delete_acceleration_structure(AccelerationStructure &acceleration_structure) {
-         if (g_Device == VK_NULL_HANDLE) return; // Avoid calls if device is null
+    void delete_acceleration_structure(AccelerationStructure &acceleration_structure)
+    {
+        if (g_Device == VK_NULL_HANDLE)
+            return; // Avoid calls if device is null
 
-         // Use the loaded function pointer (with pfn prefix)
-         if (!pfnDestroyAccelerationStructureKHR) {
-             std::cerr << "Warning: vkDestroyAccelerationStructureKHR function pointer not loaded. Cannot destroy Acceleration Structure." << std::endl;
-         } else if (acceleration_structure.structure != VK_NULL_HANDLE) {
+        // Use the loaded function pointer (with pfn prefix)
+        if (!pfnDestroyAccelerationStructureKHR)
+        {
+            std::cerr << "Warning: vkDestroyAccelerationStructureKHR function pointer not loaded. Cannot destroy Acceleration Structure." << std::endl;
+        }
+        else if (acceleration_structure.structure != VK_NULL_HANDLE)
+        {
             pfnDestroyAccelerationStructureKHR(g_Device, acceleration_structure.structure, nullptr);
             acceleration_structure.structure = VK_NULL_HANDLE;
-         }
+        }
 
-        if (acceleration_structure.buffer != VK_NULL_HANDLE) {
+        if (acceleration_structure.buffer != VK_NULL_HANDLE)
+        {
             vkDestroyBuffer(g_Device, acceleration_structure.buffer, nullptr);
             acceleration_structure.buffer = VK_NULL_HANDLE;
         }
-        if (acceleration_structure.memory != VK_NULL_HANDLE) {
+        if (acceleration_structure.memory != VK_NULL_HANDLE)
+        {
             vkFreeMemory(g_Device, acceleration_structure.memory, nullptr);
             acceleration_structure.memory = VK_NULL_HANDLE;
         }
         acceleration_structure.address = 0;
     }
 
-
-    VkShaderModule createShaderModule(const std::string& filePath) {
+    VkShaderModule createShaderModule(const std::string &filePath)
+    {
         std::cout << "Loading shader: " << filePath << std::endl;
-        if (!std::filesystem::exists(filePath)) {
-             throw std::runtime_error("Shader file not found: " + filePath);
+        if (!std::filesystem::exists(filePath))
+        {
+            throw std::runtime_error("Shader file not found: " + filePath);
         }
         std::vector<char> code = Kinesis::Pipeline::readFile(filePath); // Use Pipeline's readFile
-        if (code.empty()) {
-             throw std::runtime_error("Shader file is empty: " + filePath);
+        if (code.empty())
+        {
+            throw std::runtime_error("Shader file is empty: " + filePath);
         }
         std::cout << "  - Size: " << code.size() << " bytes" << std::endl;
 
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = code.size();
-        if (code.size() % 4 != 0) {
-             std::cerr << "Warning: Shader code size (" << code.size() << ") is not a multiple of 4 for " << filePath << ". This might cause issues." << std::endl;
+        if (code.size() % 4 != 0)
+        {
+            std::cerr << "Warning: Shader code size (" << code.size() << ") is not a multiple of 4 for " << filePath << ". This might cause issues." << std::endl;
         }
         // Ensure code size is correct even if warning is issued
-        createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data());
-
+        createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
         VkShaderModule shaderModule;
-        if (vkCreateShaderModule(g_Device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        if (vkCreateShaderModule(g_Device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+        {
             throw std::runtime_error("Failed to create shader module for: " + filePath);
         }
         std::cout << "  - Module created successfully." << std::endl;
         return shaderModule;
     }
 
-    void createRtOutputImage(VkExtent2D extent) {
+    void createRtOutputImage(VkExtent2D extent)
+    {
         destroyRtOutputImage(); // Clean up existing if any
 
         rtOutput.format = VK_FORMAT_R16G16B16A16_SFLOAT; // Use HDR format
@@ -181,7 +200,8 @@ namespace Kinesis::RayTracerManager {
         imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT; // Add Transfer Src if needed for blitting/copying
         imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        if (vkCreateImage(g_Device, &imageInfo, nullptr, &rtOutput.image) != VK_SUCCESS) {
+        if (vkCreateImage(g_Device, &imageInfo, nullptr, &rtOutput.image) != VK_SUCCESS)
+        {
             throw std::runtime_error("Failed to create RT output image!");
         }
 
@@ -193,7 +213,8 @@ namespace Kinesis::RayTracerManager {
         allocInfo.allocationSize = memRequirements.size;
         allocInfo.memoryTypeIndex = Kinesis::Window::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-        if (vkAllocateMemory(g_Device, &allocInfo, nullptr, &rtOutput.memory) != VK_SUCCESS) {
+        if (vkAllocateMemory(g_Device, &allocInfo, nullptr, &rtOutput.memory) != VK_SUCCESS)
+        {
             vkDestroyImage(g_Device, rtOutput.image, nullptr); // Cleanup
             rtOutput.image = VK_NULL_HANDLE;
             throw std::runtime_error("Failed to allocate RT output image memory!");
@@ -211,11 +232,12 @@ namespace Kinesis::RayTracerManager {
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
 
-        if (vkCreateImageView(g_Device, &viewInfo, nullptr, &rtOutput.view) != VK_SUCCESS) {
-             vkDestroyImage(g_Device, rtOutput.image, nullptr); // Cleanup
-             vkFreeMemory(g_Device, rtOutput.memory, nullptr); // Cleanup
-             rtOutput.image = VK_NULL_HANDLE;
-             rtOutput.memory = VK_NULL_HANDLE;
+        if (vkCreateImageView(g_Device, &viewInfo, nullptr, &rtOutput.view) != VK_SUCCESS)
+        {
+            vkDestroyImage(g_Device, rtOutput.image, nullptr); // Cleanup
+            vkFreeMemory(g_Device, rtOutput.memory, nullptr);  // Cleanup
+            rtOutput.image = VK_NULL_HANDLE;
+            rtOutput.memory = VK_NULL_HANDLE;
             throw std::runtime_error("Failed to create RT output image view!");
         }
 
@@ -233,231 +255,247 @@ namespace Kinesis::RayTracerManager {
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
-        barrier.srcAccessMask = 0; // No need to wait for previous writes
+        barrier.srcAccessMask = 0;                          // No need to wait for previous writes
         barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT; // Prepare for shader writes
 
         vkCmdPipelineBarrier(
             cmdBuf,
-            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, // Source stage
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,            // Source stage
             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, // Destination stage
             0,
             0, nullptr,
             0, nullptr,
-            1, &barrier
-        );
+            1, &barrier);
         endSingleTimeCommands(cmdBuf);
 
-         std::cout << "RT Output Image created and transitioned to General layout." << std::endl;
+        std::cout << "RT Output Image created and transitioned to General layout." << std::endl;
     }
 
-    void destroyRtOutputImage() {
-         if (g_Device == VK_NULL_HANDLE) return; // Avoid calls if device is null
-         if (rtOutput.view != VK_NULL_HANDLE) {
+    void destroyRtOutputImage()
+    {
+        if (g_Device == VK_NULL_HANDLE)
+            return; // Avoid calls if device is null
+        if (rtOutput.view != VK_NULL_HANDLE)
+        {
             vkDestroyImageView(g_Device, rtOutput.view, nullptr);
             rtOutput.view = VK_NULL_HANDLE;
         }
-        if (rtOutput.image != VK_NULL_HANDLE) {
+        if (rtOutput.image != VK_NULL_HANDLE)
+        {
             vkDestroyImage(g_Device, rtOutput.image, nullptr);
             rtOutput.image = VK_NULL_HANDLE;
         }
-        if (rtOutput.memory != VK_NULL_HANDLE) {
+        if (rtOutput.memory != VK_NULL_HANDLE)
+        {
             vkFreeMemory(g_Device, rtOutput.memory, nullptr);
             rtOutput.memory = VK_NULL_HANDLE;
         }
     }
 
-    void createRtDescriptorSetLayout() {
-        if (g_Device == VK_NULL_HANDLE) return; // Avoid calls if device is null
+    void createRtDescriptorSetLayout()
+    {
+        if (g_Device == VK_NULL_HANDLE) return;
         if (rtDescriptorSetLayout != VK_NULL_HANDLE) {
-             vkDestroyDescriptorSetLayout(g_Device, rtDescriptorSetLayout, nullptr);
-             rtDescriptorSetLayout = VK_NULL_HANDLE;
+            vkDestroyDescriptorSetLayout(g_Device, rtDescriptorSetLayout, nullptr);
+            rtDescriptorSetLayout = VK_NULL_HANDLE;
         }
 
         std::vector<VkDescriptorSetLayoutBinding> bindings;
+        uint32_t currentBinding = 0;
 
         // Binding 0: TLAS
-        bindings.push_back({0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, nullptr});
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR, nullptr});
         // Binding 1: Output Image (Storage)
-        bindings.push_back({1, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 2: Camera UBO (REMOVED from this set, assumed in global set 0)
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
 
-        // Binding 3: G-Buffer Position
-        bindings.push_back({3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 4: G-Buffer Normal
-        bindings.push_back({4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 5: G-Buffer Albedo
-        bindings.push_back({5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 6: G-Buffer Properties
-        bindings.push_back({6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-         // Add more bindings if needed (e.g., material buffers, scene info)
+        // Binding 2: Material Buffer (SSBO) <<< NEW >>>
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, nullptr}); // Accessible by CHIT/AHIT
+
+        // Binding 3: G-Buffer Position Sampler
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
+        // Binding 4: G-Buffer Normal Sampler
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
+        // Binding 5: G-Buffer Albedo Sampler
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
+        // Binding 6: G-Buffer Properties Sampler
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
+        // Add more bindings if needed (e.g., scene info UBO, texture arrays)
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
-        // Potentially add flags like VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT if needed
+        // Potentially add flags like VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT
 
         if (vkCreateDescriptorSetLayout(g_Device, &layoutInfo, nullptr, &rtDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create Ray Tracing descriptor set layout!");
         }
-         std::cout << "RT Descriptor Set Layout created." << std::endl;
+        std::cout << "RT Descriptor Set Layout created (with Material SSBO binding)." << std::endl;
     }
 
-    void createRayTracingPipeline() {
-         assert(g_Device != VK_NULL_HANDLE && "Device must be valid");
-         // Check if the required function pointer is loaded (with pfn prefix)
-         if (!pfnCreateRayTracingPipelinesKHR) {
-             throw std::runtime_error("vkCreateRayTracingPipelinesKHR function pointer not loaded!");
-         }
+    void createRayTracingPipeline()
+    {
+        assert(g_Device != VK_NULL_HANDLE && "Device must be valid");
+        // Check if the required function pointer is loaded (with pfn prefix)
+        if (!pfnCreateRayTracingPipelinesKHR)
+        {
+            throw std::runtime_error("vkCreateRayTracingPipelinesKHR function pointer not loaded!");
+        }
 
-         // --- Create Pipeline Layout ---
-         if (rtPipelineLayout != VK_NULL_HANDLE) {
-             vkDestroyPipelineLayout(g_Device, rtPipelineLayout, nullptr);
-             rtPipelineLayout = VK_NULL_HANDLE;
-         }
-         assert(rtDescriptorSetLayout != VK_NULL_HANDLE && "RT Descriptor Set Layout must be created first");
-         // Use global set layout (Set 0) and RT set layout (Set 1)
-         assert(Kinesis::globalSetLayout != VK_NULL_HANDLE && "Global set layout must exist");
-         std::vector<VkDescriptorSetLayout> setLayouts = { Kinesis::globalSetLayout, rtDescriptorSetLayout };
+        // --- Create Pipeline Layout ---
+        if (rtPipelineLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyPipelineLayout(g_Device, rtPipelineLayout, nullptr);
+            rtPipelineLayout = VK_NULL_HANDLE;
+        }
+        assert(rtDescriptorSetLayout != VK_NULL_HANDLE && "RT Descriptor Set Layout must be created first");
+        // Use global set layout (Set 0) and RT set layout (Set 1)
+        assert(Kinesis::globalSetLayout != VK_NULL_HANDLE && "Global set layout must exist");
+        std::vector<VkDescriptorSetLayout> setLayouts = {Kinesis::globalSetLayout, rtDescriptorSetLayout};
 
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size()); // Now using two sets
+        pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+        pipelineLayoutInfo.pushConstantRangeCount = 0; // No push constants for RT pipeline in this example
+        pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
-         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
-         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-         pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size()); // Now using two sets
-         pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-         pipelineLayoutInfo.pushConstantRangeCount = 0; // No push constants for RT pipeline in this example
-         pipelineLayoutInfo.pPushConstantRanges = nullptr;
+        if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &rtPipelineLayout) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create ray tracing pipeline layout!");
+        }
+        std::cout << "RT Pipeline Layout created." << std::endl;
+        // --- Pipeline Layout Created ---
 
-         if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &rtPipelineLayout) != VK_SUCCESS) {
-             throw std::runtime_error("Failed to create ray tracing pipeline layout!");
-         }
-         std::cout << "RT Pipeline Layout created." << std::endl;
-         // --- Pipeline Layout Created ---
+        std::cout << "Creating Ray Tracing Pipeline..." << std::endl;
 
+// Adjust shader paths based on execution directory if needed
+#if __APPLE__
+        const std::string rgenShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rgen.spv";
+        const std::string missShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rmiss.spv";
+        const std::string chitShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rchit.spv";
+#else
+        const std::string rgenShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rgen.spv";
+        const std::string missShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rmiss.spv";
+        const std::string chitShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rchit.spv";
+#endif
 
-         std::cout << "Creating Ray Tracing Pipeline..." << std::endl;
+        VkShaderModule rgenModule = VK_NULL_HANDLE;
+        VkShaderModule missModule = VK_NULL_HANDLE;
+        VkShaderModule chitModule = VK_NULL_HANDLE;
 
-         // Adjust shader paths based on execution directory if needed
-         #if __APPLE__
-             const std::string rgenShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rgen.spv";
-             const std::string missShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rmiss.spv";
-             const std::string chitShaderPath = "../../../../../../kinesis/assets/shaders/bin/raytrace.rchit.spv";
-         #else
-             const std::string rgenShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rgen.spv";
-             const std::string missShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rmiss.spv";
-             const std::string chitShaderPath = "../../../kinesis/assets/shaders/bin/raytrace.rchit.spv";
-         #endif
+        try
+        {
+            rgenModule = createShaderModule(rgenShaderPath);
+            missModule = createShaderModule(missShaderPath);
+            chitModule = createShaderModule(chitShaderPath);
+        }
+        catch (const std::exception &e)
+        {
+            if (rgenModule)
+                vkDestroyShaderModule(g_Device, rgenModule, nullptr);
+            if (missModule)
+                vkDestroyShaderModule(g_Device, missModule, nullptr);
+            // Potential missing cleanup for chitModule if it failed after others succeeded
+            if (chitModule)
+                vkDestroyShaderModule(g_Device, chitModule, nullptr);
+            std::cerr << "Failed to load ray tracing shaders: " << e.what() << std::endl;
+            throw;
+        }
 
-         VkShaderModule rgenModule = VK_NULL_HANDLE;
-         VkShaderModule missModule = VK_NULL_HANDLE;
-         VkShaderModule chitModule = VK_NULL_HANDLE;
+        std::vector<VkPipelineShaderStageCreateInfo> stages;
+        // RGen Stage
+        VkPipelineShaderStageCreateInfo rgenStageInfo{};
+        rgenStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        rgenStageInfo.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        rgenStageInfo.module = rgenModule;
+        rgenStageInfo.pName = "main";
+        stages.push_back(rgenStageInfo);
+        // Miss Stage
+        VkPipelineShaderStageCreateInfo missStageInfo{};
+        missStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        missStageInfo.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
+        missStageInfo.module = missModule;
+        missStageInfo.pName = "main";
+        stages.push_back(missStageInfo);
+        // CHit Stage
+        VkPipelineShaderStageCreateInfo chitStageInfo{};
+        chitStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        chitStageInfo.stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        chitStageInfo.module = chitModule;
+        chitStageInfo.pName = "main";
+        stages.push_back(chitStageInfo);
 
-         try {
-              rgenModule = createShaderModule(rgenShaderPath);
-              missModule = createShaderModule(missShaderPath);
-              chitModule = createShaderModule(chitShaderPath);
-         } catch (const std::exception& e) {
-              if (rgenModule) vkDestroyShaderModule(g_Device, rgenModule, nullptr);
-              if (missModule) vkDestroyShaderModule(g_Device, missModule, nullptr);
-              // Potential missing cleanup for chitModule if it failed after others succeeded
-              if (chitModule) vkDestroyShaderModule(g_Device, chitModule, nullptr);
-              std::cerr << "Failed to load ray tracing shaders: " << e.what() << std::endl;
-              throw;
-         }
+        // Shader Groups
+        shader_groups.clear();
+        // RGen Group (Index 0)
+        VkRayTracingShaderGroupCreateInfoKHR rgenGroup{};
+        rgenGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        rgenGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        rgenGroup.generalShader = 0; // Index of RGen stage in `stages`
+        rgenGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+        rgenGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+        rgenGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+        shader_groups.push_back(rgenGroup);
+        // Miss Group (Index 1)
+        VkRayTracingShaderGroupCreateInfoKHR missGroup{};
+        missGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        missGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        missGroup.generalShader = 1; // Index of Miss stage in `stages`
+        missGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
+        missGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
+        missGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
+        shader_groups.push_back(missGroup);
+        // CHit Group (Index 2) - Triangle geometry uses this group
+        VkRayTracingShaderGroupCreateInfoKHR chitGroup{};
+        chitGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+        chitGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        chitGroup.generalShader = VK_SHADER_UNUSED_KHR;
+        chitGroup.closestHitShader = 2;                      // Index of CHit stage in `stages`
+        chitGroup.anyHitShader = VK_SHADER_UNUSED_KHR;       // Add AnyHit shader index if used
+        chitGroup.intersectionShader = VK_SHADER_UNUSED_KHR; // Use for procedural geometry
+        shader_groups.push_back(chitGroup);
 
-         std::vector<VkPipelineShaderStageCreateInfo> stages;
-         // RGen Stage
-         VkPipelineShaderStageCreateInfo rgenStageInfo{};
-         rgenStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-         rgenStageInfo.stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-         rgenStageInfo.module = rgenModule;
-         rgenStageInfo.pName = "main";
-         stages.push_back(rgenStageInfo);
-         // Miss Stage
-         VkPipelineShaderStageCreateInfo missStageInfo{};
-         missStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-         missStageInfo.stage = VK_SHADER_STAGE_MISS_BIT_KHR;
-         missStageInfo.module = missModule;
-         missStageInfo.pName = "main";
-         stages.push_back(missStageInfo);
-         // CHit Stage
-         VkPipelineShaderStageCreateInfo chitStageInfo{};
-         chitStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-         chitStageInfo.stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-         chitStageInfo.module = chitModule;
-         chitStageInfo.pName = "main";
-         stages.push_back(chitStageInfo);
+        // Pipeline Create Info
+        VkRayTracingPipelineCreateInfoKHR pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+        pipelineInfo.stageCount = static_cast<uint32_t>(stages.size());
+        pipelineInfo.pStages = stages.data();
+        pipelineInfo.groupCount = static_cast<uint32_t>(shader_groups.size());
+        pipelineInfo.pGroups = shader_groups.data();
+        pipelineInfo.maxPipelineRayRecursionDepth = 1; // Max recursion depth (e.g., 1 for primary rays only)
+        pipelineInfo.layout = rtPipelineLayout;        // Use the RT pipeline layout created above
+        // pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // For pipeline derivatives
+        // pipelineInfo.basePipelineIndex = -1;
 
-         // Shader Groups
-         shader_groups.clear();
-         // RGen Group (Index 0)
-         VkRayTracingShaderGroupCreateInfoKHR rgenGroup{};
-         rgenGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-         rgenGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-         rgenGroup.generalShader = 0; // Index of RGen stage in `stages`
-         rgenGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-         rgenGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-         rgenGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-         shader_groups.push_back(rgenGroup);
-         // Miss Group (Index 1)
-         VkRayTracingShaderGroupCreateInfoKHR missGroup{};
-         missGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-         missGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
-         missGroup.generalShader = 1; // Index of Miss stage in `stages`
-         missGroup.closestHitShader = VK_SHADER_UNUSED_KHR;
-         missGroup.anyHitShader = VK_SHADER_UNUSED_KHR;
-         missGroup.intersectionShader = VK_SHADER_UNUSED_KHR;
-         shader_groups.push_back(missGroup);
-         // CHit Group (Index 2) - Triangle geometry uses this group
-         VkRayTracingShaderGroupCreateInfoKHR chitGroup{};
-         chitGroup.sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
-         chitGroup.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-         chitGroup.generalShader = VK_SHADER_UNUSED_KHR;
-         chitGroup.closestHitShader = 2; // Index of CHit stage in `stages`
-         chitGroup.anyHitShader = VK_SHADER_UNUSED_KHR; // Add AnyHit shader index if used
-         chitGroup.intersectionShader = VK_SHADER_UNUSED_KHR; // Use for procedural geometry
-         shader_groups.push_back(chitGroup);
+        if (rtPipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(g_Device, rtPipeline, nullptr); // Destroy old pipeline if exists
+            rtPipeline = VK_NULL_HANDLE;
+        }
 
-         // Pipeline Create Info
-         VkRayTracingPipelineCreateInfoKHR pipelineInfo{};
-         pipelineInfo.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-         pipelineInfo.stageCount = static_cast<uint32_t>(stages.size());
-         pipelineInfo.pStages = stages.data();
-         pipelineInfo.groupCount = static_cast<uint32_t>(shader_groups.size());
-         pipelineInfo.pGroups = shader_groups.data();
-         pipelineInfo.maxPipelineRayRecursionDepth = 1; // Max recursion depth (e.g., 1 for primary rays only)
-         pipelineInfo.layout = rtPipelineLayout; // Use the RT pipeline layout created above
-         // pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // For pipeline derivatives
-         // pipelineInfo.basePipelineIndex = -1;
+        if (pfnCreateRayTracingPipelinesKHR(g_Device, VK_NULL_HANDLE, g_PipelineCache, 1, &pipelineInfo, nullptr, &rtPipeline) != VK_SUCCESS)
+        {
+            // Cleanup modules and layout on failure
+            vkDestroyShaderModule(g_Device, rgenModule, nullptr);
+            vkDestroyShaderModule(g_Device, missModule, nullptr);
+            vkDestroyShaderModule(g_Device, chitModule, nullptr);
+            vkDestroyPipelineLayout(g_Device, rtPipelineLayout, nullptr); // Clean up layout on failure
+            rtPipelineLayout = VK_NULL_HANDLE;
+            throw std::runtime_error("Failed to create ray tracing pipeline!");
+        }
 
+        // Cleanup shader modules - they are no longer needed after pipeline creation
+        vkDestroyShaderModule(g_Device, rgenModule, nullptr);
+        vkDestroyShaderModule(g_Device, missModule, nullptr);
+        vkDestroyShaderModule(g_Device, chitModule, nullptr);
 
-
-         if (rtPipeline != VK_NULL_HANDLE) {
-             vkDestroyPipeline(g_Device, rtPipeline, nullptr); // Destroy old pipeline if exists
-             rtPipeline = VK_NULL_HANDLE;
-         }
-
-
-         if (pfnCreateRayTracingPipelinesKHR(g_Device, VK_NULL_HANDLE, g_PipelineCache, 1, &pipelineInfo, nullptr, &rtPipeline) != VK_SUCCESS) {
-             // Cleanup modules and layout on failure
-             vkDestroyShaderModule(g_Device, rgenModule, nullptr);
-             vkDestroyShaderModule(g_Device, missModule, nullptr);
-             vkDestroyShaderModule(g_Device, chitModule, nullptr);
-             vkDestroyPipelineLayout(g_Device, rtPipelineLayout, nullptr); // Clean up layout on failure
-             rtPipelineLayout = VK_NULL_HANDLE;
-             throw std::runtime_error("Failed to create ray tracing pipeline!");
-         }
-
-         // Cleanup shader modules - they are no longer needed after pipeline creation
-         vkDestroyShaderModule(g_Device, rgenModule, nullptr);
-         vkDestroyShaderModule(g_Device, missModule, nullptr);
-         vkDestroyShaderModule(g_Device, chitModule, nullptr);
-
-         std::cout << "Ray Tracing Pipeline created successfully." << std::endl;
+        std::cout << "Ray Tracing Pipeline created successfully." << std::endl;
     }
 
     // Helper to Create and Upload SBT Entry
-    void createSBTEntry(ShaderBindingTableEntry& sbtEntry, uint32_t groupIndex, uint32_t handleSize, uint32_t groupHandleAlignment, const uint8_t* shaderHandleStorage) {
+    void createSBTEntry(ShaderBindingTableEntry &sbtEntry, uint32_t groupIndex, uint32_t handleSize, uint32_t groupHandleAlignment, const uint8_t *shaderHandleStorage)
+    {
         // SBT entries need specific usage flags and alignment
         const VkBufferUsageFlags sbtBufferUsageFlags =
             VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
@@ -468,15 +506,16 @@ namespace Kinesis::RayTracerManager {
         const VkDeviceSize sbtEntrySizeAligned = Kinesis::Buffer::getAlignment(handleSize, groupHandleAlignment);
 
         // Destroy old buffer/memory if it exists
-        if (sbtEntry.buffer != VK_NULL_HANDLE) {
+        if (sbtEntry.buffer != VK_NULL_HANDLE)
+        {
             vkDestroyBuffer(g_Device, sbtEntry.buffer, nullptr);
             sbtEntry.buffer = VK_NULL_HANDLE;
         }
-        if (sbtEntry.memory != VK_NULL_HANDLE) {
+        if (sbtEntry.memory != VK_NULL_HANDLE)
+        {
             vkFreeMemory(g_Device, sbtEntry.memory, nullptr);
             sbtEntry.memory = VK_NULL_HANDLE;
         }
-
 
         // Create Buffer using the helper function
         Kinesis::Window::createBuffer(
@@ -484,8 +523,7 @@ namespace Kinesis::RayTracerManager {
             sbtBufferUsageFlags,
             VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, // Use device local memory for performance
             sbtEntry.buffer,
-            sbtEntry.memory
-        );
+            sbtEntry.memory);
 
         // Create staging buffer for upload
         VkBuffer stagingBuffer;
@@ -495,11 +533,10 @@ namespace Kinesis::RayTracerManager {
             VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             stagingBuffer,
-            stagingMemory
-        );
+            stagingMemory);
 
         // Map staging buffer and copy the specific handle data
-        void* mappedData;
+        void *mappedData;
         vkMapMemory(g_Device, stagingMemory, 0, handleSize, 0, &mappedData);
         // Copy the handle for the specified groupIndex from the retrieved storage
         memcpy(mappedData, shaderHandleStorage + groupIndex * handleSize, handleSize);
@@ -509,7 +546,7 @@ namespace Kinesis::RayTracerManager {
         VkCommandBuffer cmdBuf = beginSingleTimeCommands();
         VkBufferCopy copyRegion{};
         copyRegion.srcOffset = 0;
-        copyRegion.dstOffset = 0; // Copy to the beginning of the SBT entry buffer
+        copyRegion.dstOffset = 0;     // Copy to the beginning of the SBT entry buffer
         copyRegion.size = handleSize; // Copy only the raw handle size
         vkCmdCopyBuffer(cmdBuf, stagingBuffer, sbtEntry.buffer, 1, &copyRegion);
         endSingleTimeCommands(cmdBuf);
@@ -518,7 +555,6 @@ namespace Kinesis::RayTracerManager {
         vkDestroyBuffer(g_Device, stagingBuffer, nullptr);
         vkFreeMemory(g_Device, stagingMemory, nullptr);
 
-
         // Set up address region for vkCmdTraceRaysKHR
         // Get address using the loaded function pointer (via helper)
         sbtEntry.addressRegion.deviceAddress = getBufferDeviceAddress(sbtEntry.buffer);
@@ -526,49 +562,53 @@ namespace Kinesis::RayTracerManager {
         sbtEntry.addressRegion.size = sbtEntrySizeAligned;   // Size must be the aligned size
     }
 
+    void createShaderBindingTable()
+    {
+        assert(rtPipeline != VK_NULL_HANDLE && "Ray tracing pipeline must be created before SBT");
+        // Check if the required function pointer is loaded (with pfn prefix)
+        if (!pfnGetRayTracingShaderGroupHandlesKHR)
+        {
+            throw std::runtime_error("vkGetRayTracingShaderGroupHandlesKHR function pointer not loaded!");
+        }
+        assert(!shader_groups.empty() && "Shader groups must be created before SBT");
 
-    void createShaderBindingTable() {
-         assert(rtPipeline != VK_NULL_HANDLE && "Ray tracing pipeline must be created before SBT");
-         // Check if the required function pointer is loaded (with pfn prefix)
-         if (!pfnGetRayTracingShaderGroupHandlesKHR) {
-             throw std::runtime_error("vkGetRayTracingShaderGroupHandlesKHR function pointer not loaded!");
-         }
-         assert(!shader_groups.empty() && "Shader groups must be created before SBT");
+        std::cout << "Creating Shader Binding Table..." << std::endl;
 
+        const uint32_t handleSize = rt_pipeline_properties.shaderGroupHandleSize;
+        const uint32_t handleAlignment = rt_pipeline_properties.shaderGroupHandleAlignment; // Renamed for clarity
+        const uint32_t groupCount = static_cast<uint32_t>(shader_groups.size());
 
-         std::cout << "Creating Shader Binding Table..." << std::endl;
+        // Get all shader group handles from the pipeline
+        const uint32_t dataSize = groupCount * handleSize;
+        std::vector<uint8_t> shaderHandleStorage(dataSize);
 
-         const uint32_t handleSize = rt_pipeline_properties.shaderGroupHandleSize;
-         const uint32_t handleAlignment = rt_pipeline_properties.shaderGroupHandleAlignment; // Renamed for clarity
-         const uint32_t groupCount = static_cast<uint32_t>(shader_groups.size());
+        // Call function via loaded pointer (with pfn prefix)
+        if (pfnGetRayTracingShaderGroupHandlesKHR(g_Device, rtPipeline, 0, groupCount, dataSize, shaderHandleStorage.data()) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to get ray tracing shader group handles!");
+        }
 
-         // Get all shader group handles from the pipeline
-         const uint32_t dataSize = groupCount * handleSize;
-         std::vector<uint8_t> shaderHandleStorage(dataSize);
-
-         // Call function via loaded pointer (with pfn prefix)
-         if (pfnGetRayTracingShaderGroupHandlesKHR(g_Device, rtPipeline, 0, groupCount, dataSize, shaderHandleStorage.data()) != VK_SUCCESS) {
-             throw std::runtime_error("Failed to get ray tracing shader group handles!");
-         }
-
-         // --- Create SBT entries ---
-         // Assuming Group Indices: 0=RGen, 1=Miss, 2=CHit
-         // Use handleAlignment for alignment parameter
-         createSBTEntry(rgenSBT, 0, handleSize, handleAlignment, shaderHandleStorage.data());
-         createSBTEntry(missSBT, 1, handleSize, handleAlignment, shaderHandleStorage.data());
-         createSBTEntry(chitSBT, 2, handleSize, handleAlignment, shaderHandleStorage.data());
-         // Create other entries (ahitSBT, callableSBT) if needed, adjusting indices
-
-         std::cout << "Shader Binding Table created successfully." << std::endl;
-         std::cout << "  - RGen Address: " << rgenSBT.addressRegion.deviceAddress << ", Stride: " << rgenSBT.addressRegion.stride << ", Size: " << rgenSBT.addressRegion.size << std::endl;
-         std::cout << "  - Miss Address: " << missSBT.addressRegion.deviceAddress << ", Stride: " << missSBT.addressRegion.stride << ", Size: " << missSBT.addressRegion.size << std::endl;
-         std::cout << "  - CHit Address: " << chitSBT.addressRegion.deviceAddress << ", Stride: " << chitSBT.addressRegion.stride << ", Size: " << chitSBT.addressRegion.size << std::endl;
-     }
-
+        // --- Create SBT entries ---
+        // Assuming Group Indices: 0=RGen, 1=Miss, 2=CHit
+        // Use handleAlignment for alignment parameter
+        createSBTEntry(rgenSBT, 0, handleSize, handleAlignment, shaderHandleStorage.data());
+        createSBTEntry(missSBT, 1, handleSize, handleAlignment, shaderHandleStorage.data());
+        createSBTEntry(chitSBT, 2, handleSize, handleAlignment, shaderHandleStorage.data());
+        // Create other entries (ahitSBT, callableSBT) if needed, adjusting indices
+        callableSBT.addressRegion.deviceAddress = 0; // Or address of a dummy buffer if needed
+        callableSBT.addressRegion.stride = 0;        // Stride is 0 if no entries
+        callableSBT.addressRegion.size = 0;          // Size is 0 if no entries
+        std::cout << "Shader Binding Table created successfully." << std::endl;
+        std::cout << "  - RGen Address: " << rgenSBT.addressRegion.deviceAddress << ", Stride: " << rgenSBT.addressRegion.stride << ", Size: " << rgenSBT.addressRegion.size << std::endl;
+        std::cout << "  - Miss Address: " << missSBT.addressRegion.deviceAddress << ", Stride: " << missSBT.addressRegion.stride << ", Size: " << missSBT.addressRegion.size << std::endl;
+        std::cout << "  - CHit Address: " << chitSBT.addressRegion.deviceAddress << ", Stride: " << chitSBT.addressRegion.stride << ", Size: " << chitSBT.addressRegion.size << std::endl;
+    }
 
     // --- initialize ---
-    void initialize(VkExtent2D extent) {
-        if (!Kinesis::GUI::raytracing_available || g_Device == VK_NULL_HANDLE) {
+    void initialize(VkExtent2D extent)
+    {
+        if (!Kinesis::GUI::raytracing_available || g_Device == VK_NULL_HANDLE)
+        {
             std::cout << "Ray Tracing not available or device not ready. Skipping RT Manager initialization." << std::endl;
             return;
         }
@@ -591,28 +631,29 @@ namespace Kinesis::RayTracerManager {
         pfnCopyAccelerationStructureKHR = (PFN_vkCopyAccelerationStructureKHR)vkGetDeviceProcAddr(g_Device, "vkCopyAccelerationStructureKHR");
         // pfnBuildAccelerationStructuresKHR = (PFN_vkBuildAccelerationStructuresKHR)vkGetDeviceProcAddr(g_Device, "vkBuildAccelerationStructuresKHR"); // If needed
 
-
         // Check if essential pointers were loaded (using renamed variables)
         if (!pfnGetBufferDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnCreateAccelerationStructureKHR ||
             !pfnDestroyAccelerationStructureKHR || !pfnGetAccelerationStructureBuildSizesKHR || !pfnGetAccelerationStructureDeviceAddressKHR ||
-            !pfnCmdTraceRaysKHR || !pfnGetRayTracingShaderGroupHandlesKHR || !pfnCreateRayTracingPipelinesKHR) {
-             std::cerr << "Warning: Failed to load one or more required ray tracing function pointers!" << std::endl;
-             // Decide how to handle this: continue with limited functionality, throw, or disable RT.
-             // For now, we'll proceed, but calls might fail later.
-             Kinesis::GUI::raytracing_available = false; // Optionally disable RT if pointers fail
-             std::cerr << "Disabling Ray Tracing due to missing function pointers." << std::endl;
-             return; // Exit initialization if essential pointers are missing
+            !pfnCmdTraceRaysKHR || !pfnGetRayTracingShaderGroupHandlesKHR || !pfnCreateRayTracingPipelinesKHR)
+        {
+            std::cerr << "Warning: Failed to load one or more required ray tracing function pointers!" << std::endl;
+            // Decide how to handle this: continue with limited functionality, throw, or disable RT.
+            // For now, we'll proceed, but calls might fail later.
+            Kinesis::GUI::raytracing_available = false; // Optionally disable RT if pointers fail
+            std::cerr << "Disabling Ray Tracing due to missing function pointers." << std::endl;
+            return; // Exit initialization if essential pointers are missing
         }
         std::cout << "Ray tracing function pointers loaded." << std::endl;
 
-
         // Create command pool for builds (if not already created elsewhere)
-        if (buildCommandPool == VK_NULL_HANDLE) {
+        if (buildCommandPool == VK_NULL_HANDLE)
+        {
             VkCommandPoolCreateInfo poolInfo{};
             poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-            poolInfo.queueFamilyIndex = g_QueueFamily; // Use global queue family
+            poolInfo.queueFamilyIndex = g_QueueFamily;                        // Use global queue family
             poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // Allow resetting individual buffers
-            if (vkCreateCommandPool(g_Device, &poolInfo, nullptr, &buildCommandPool) != VK_SUCCESS) {
+            if (vkCreateCommandPool(g_Device, &poolInfo, nullptr, &buildCommandPool) != VK_SUCCESS)
+            {
                 throw std::runtime_error("Failed to create command pool for AS builds!");
             }
         }
@@ -636,9 +677,9 @@ namespace Kinesis::RayTracerManager {
         deviceFeatures2.pNext = &as_features; // Link features struct
         vkGetPhysicalDeviceFeatures2(g_PhysicalDevice, &deviceFeatures2);
 
-
         std::cout << "Initializing Ray Tracing Manager..." << std::endl;
-        try {
+        try
+        {
             // 1. Create Layouts (Global layout created in kinesis.cpp)
             createRtDescriptorSetLayout(); // Creates rtDescriptorSetLayout (Set 1)
 
@@ -646,7 +687,7 @@ namespace Kinesis::RayTracerManager {
             createRtOutputImage(extent); // Creates rtOutput
 
             // 3. Build Acceleration Structures
-            create_blas(); // Creates blas vector
+            create_blas();     // Creates blas vector
             create_tlas(true); // Creates tlas, allows updates
 
             // 4. Create RT Pipeline (Requires layouts)
@@ -657,98 +698,114 @@ namespace Kinesis::RayTracerManager {
 
             // 6. Initial Descriptor Set Allocation/Update (will be done per-frame in run loop)
             // allocateAndUpdateRtDescriptorSet is called later with frame-specific data
-
-        } catch (const std::exception& e) {
-             std::cerr << "Ray Tracing Manager Initialization failed: " << e.what() << std::endl;
-             cleanup(); // Attempt cleanup on failure
-             throw;
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Ray Tracing Manager Initialization failed: " << e.what() << std::endl;
+            cleanup(); // Attempt cleanup on failure
+            throw;
         }
         std::cout << "Ray Tracing Manager Initialized Successfully." << std::endl;
     }
 
     // --- cleanup ---
-    void cleanup() {
-         // Check device validity before cleanup
-        if (g_Device == VK_NULL_HANDLE) return;
-
+    void cleanup()
+    {
+        // Check device validity before cleanup
+        if (g_Device == VK_NULL_HANDLE)
+            return;
 
         std::cout << "Cleaning up Ray Tracing Manager..." << std::endl;
         // Ensure all GPU operations are finished before destroying resources
         vkDeviceWaitIdle(g_Device);
 
         // Destroy SBT Buffers
-        auto destroySBTEntry = [&](ShaderBindingTableEntry& entry) {
-             if (g_Device == VK_NULL_HANDLE) return; // Check again inside lambda
-            if (entry.buffer != VK_NULL_HANDLE) vkDestroyBuffer(g_Device, entry.buffer, nullptr);
-            if (entry.memory != VK_NULL_HANDLE) vkFreeMemory(g_Device, entry.memory, nullptr);
+        auto destroySBTEntry = [&](ShaderBindingTableEntry &entry)
+        {
+            if (g_Device == VK_NULL_HANDLE)
+                return; // Check again inside lambda
+            if (entry.buffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(g_Device, entry.buffer, nullptr);
+            if (entry.memory != VK_NULL_HANDLE)
+                vkFreeMemory(g_Device, entry.memory, nullptr);
             entry = {}; // Reset struct
         };
         destroySBTEntry(rgenSBT);
         destroySBTEntry(missSBT);
         destroySBTEntry(chitSBT);
-         std::cout << "  - SBTs destroyed." << std::endl;
-
+        destroySBTEntry(callableSBT);
+        std::cout << "  - SBTs destroyed." << std::endl;
 
         // Destroy RT Pipeline
-        if (rtPipeline != VK_NULL_HANDLE) {
-             vkDestroyPipeline(g_Device, rtPipeline, nullptr);
-             rtPipeline = VK_NULL_HANDLE;
-             std::cout << "  - RT Pipeline destroyed." << std::endl;
+        if (rtPipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(g_Device, rtPipeline, nullptr);
+            rtPipeline = VK_NULL_HANDLE;
+            std::cout << "  - RT Pipeline destroyed." << std::endl;
         }
 
-         // Destroy Layouts
-         // Global layout (Set 0) is cleaned up in kinesis.cpp
-        if (rtPipelineLayout != VK_NULL_HANDLE) {
-             vkDestroyPipelineLayout(g_Device, rtPipelineLayout, g_Allocator); // Use allocator if specified at creation
-             rtPipelineLayout = VK_NULL_HANDLE;
-             std::cout << "  - RT Pipeline Layout destroyed." << std::endl;
+        // Destroy Layouts
+        // Global layout (Set 0) is cleaned up in kinesis.cpp
+        if (rtPipelineLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyPipelineLayout(g_Device, rtPipelineLayout, g_Allocator); // Use allocator if specified at creation
+            rtPipelineLayout = VK_NULL_HANDLE;
+            std::cout << "  - RT Pipeline Layout destroyed." << std::endl;
         }
-        if (rtDescriptorSetLayout != VK_NULL_HANDLE) {
-             vkDestroyDescriptorSetLayout(g_Device, rtDescriptorSetLayout, g_Allocator); // Use allocator
-             rtDescriptorSetLayout = VK_NULL_HANDLE;
-             std::cout << "  - RT Descriptor Set Layout destroyed." << std::endl;
+        if (rtDescriptorSetLayout != VK_NULL_HANDLE)
+        {
+            vkDestroyDescriptorSetLayout(g_Device, rtDescriptorSetLayout, g_Allocator); // Use allocator
+            rtDescriptorSetLayout = VK_NULL_HANDLE;
+            std::cout << "  - RT Descriptor Set Layout destroyed." << std::endl;
         }
         // Descriptor set (rtDescriptorSet) is freed when the pool (g_DescriptorPool) is destroyed
 
-
         // Destroy Acceleration Structures
         // Use the helper which now calls the function pointer (pfn prefix)
-        if (tlas.structure) {
+        if (tlas.structure)
+        {
             delete_acceleration_structure(tlas);
-             std::cout << "  - TLAS destroyed." << std::endl;
-        } else {
-             // Ensure buffer/memory are cleaned up even if structure creation failed
-             if (tlas.buffer != VK_NULL_HANDLE) vkDestroyBuffer(g_Device, tlas.buffer, nullptr);
-             if (tlas.memory != VK_NULL_HANDLE) vkFreeMemory(g_Device, tlas.memory, nullptr);
-             tlas = {}; // Reset struct
+            std::cout << "  - TLAS destroyed." << std::endl;
+        }
+        else
+        {
+            // Ensure buffer/memory are cleaned up even if structure creation failed
+            if (tlas.buffer != VK_NULL_HANDLE)
+                vkDestroyBuffer(g_Device, tlas.buffer, nullptr);
+            if (tlas.memory != VK_NULL_HANDLE)
+                vkFreeMemory(g_Device, tlas.memory, nullptr);
+            tlas = {}; // Reset struct
         }
 
-        if (instances_buffer != VK_NULL_HANDLE) {
-             vkDestroyBuffer(g_Device, instances_buffer, nullptr);
-             instances_buffer = VK_NULL_HANDLE;
+        if (instances_buffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(g_Device, instances_buffer, nullptr);
+            instances_buffer = VK_NULL_HANDLE;
         }
-         if (instances_buffer_memory != VK_NULL_HANDLE) {
-              vkFreeMemory(g_Device, instances_buffer_memory, nullptr);
-              instances_buffer_memory = VK_NULL_HANDLE;
-              std::cout << "  - Instance Buffer destroyed." << std::endl;
-         }
+        if (instances_buffer_memory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(g_Device, instances_buffer_memory, nullptr);
+            instances_buffer_memory = VK_NULL_HANDLE;
+            std::cout << "  - Instance Buffer destroyed." << std::endl;
+        }
 
-        for (auto& b : blas) {
-             delete_acceleration_structure(b); // Use helper
+        for (auto &b : blas)
+        {
+            delete_acceleration_structure(b); // Use helper
         }
         blas.clear();
-         std::cout << "  - BLASes destroyed." << std::endl;
+        std::cout << "  - BLASes destroyed." << std::endl;
 
-         // Destroy RT Output Image
-         destroyRtOutputImage();
-         std::cout << "  - RT Output Image destroyed." << std::endl;
-
+        // Destroy RT Output Image
+        destroyRtOutputImage();
+        std::cout << "  - RT Output Image destroyed." << std::endl;
 
         // Destroy Build Command Pool (if created by this manager)
-        if (buildCommandPool != VK_NULL_HANDLE) {
-             vkDestroyCommandPool(g_Device, buildCommandPool, nullptr);
-             buildCommandPool = VK_NULL_HANDLE;
-             std::cout << "  - Build Command Pool destroyed." << std::endl;
+        if (buildCommandPool != VK_NULL_HANDLE)
+        {
+            vkDestroyCommandPool(g_Device, buildCommandPool, nullptr);
+            buildCommandPool = VK_NULL_HANDLE;
+            std::cout << "  - Build Command Pool destroyed." << std::endl;
         }
 
         rtDescriptorSet = VK_NULL_HANDLE; // Reset the handle (memory freed with pool)
@@ -757,149 +814,154 @@ namespace Kinesis::RayTracerManager {
 
     // --- allocateAndUpdateRtDescriptorSet ---
     // Updates the RT-specific descriptor set (Set 1)
-     void allocateAndUpdateRtDescriptorSet(VkAccelerationStructureKHR tlasHandle, VkBuffer /*camBuffer*/, VkDeviceSize /*camBufSize*/) {
-         assert(rtDescriptorSetLayout != VK_NULL_HANDLE && "RT Descriptor Set Layout must be created first");
-         assert(g_DescriptorPool != VK_NULL_HANDLE && "Global Descriptor Pool is null");
-         assert(rtOutput.view != VK_NULL_HANDLE && "RT Output Image View must be created first");
-         // Assert for GBuffer resources needed
-         assert(Kinesis::GBuffer::sampler != VK_NULL_HANDLE && "G-Buffer Sampler missing");
-         assert(Kinesis::GBuffer::positionAttachment.view != VK_NULL_HANDLE && "G-Buffer Position View missing");
-         assert(Kinesis::GBuffer::normalAttachment.view != VK_NULL_HANDLE && "G-Buffer Normal View missing");
-         assert(Kinesis::GBuffer::albedoAttachment.view != VK_NULL_HANDLE && "G-Buffer Albedo View missing");
-         assert(Kinesis::GBuffer::propertiesAttachment.view != VK_NULL_HANDLE && "G-Buffer Properties View missing");
-         assert(tlasHandle != VK_NULL_HANDLE && "TLAS Handle missing");
-         // Removed assertions for camBuffer/camBufSize as camera is now in global set
+    void allocateAndUpdateRtDescriptorSet(VkAccelerationStructureKHR tlasHandle, VkBuffer /*camBuffer*/, VkDeviceSize /*camBufSize*/)
+    {
+        assert(rtDescriptorSetLayout != VK_NULL_HANDLE && "RT Descriptor Set Layout must be created first");
+        assert(g_DescriptorPool != VK_NULL_HANDLE && "Global Descriptor Pool is null");
+        assert(rtOutput.view != VK_NULL_HANDLE && "RT Output Image View must be created first");
+        // Assert for GBuffer resources
+        assert(Kinesis::GBuffer::sampler != VK_NULL_HANDLE && "G-Buffer Sampler missing");
+        assert(Kinesis::GBuffer::positionAttachment.view != VK_NULL_HANDLE && "G-Buffer Position View missing");
+        // ... (assert other GBuffer views) ...
+        assert(Kinesis::materialBuffer != nullptr && Kinesis::materialBuffer->getBuffer() != VK_NULL_HANDLE && "Material Buffer is missing!"); // <<< NEW ASSERT >>>
+        assert(tlasHandle != VK_NULL_HANDLE && "TLAS Handle missing");
 
-         // Allocate the descriptor set if it hasn't been allocated yet
-         // We typically reuse the same set handle and just update its contents each frame.
-         if (rtDescriptorSet == VK_NULL_HANDLE) {
-            VkDescriptorSetAllocateInfo allocInfo{};
-            allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-            allocInfo.descriptorPool = g_DescriptorPool;
-            allocInfo.descriptorSetCount = 1;
-            allocInfo.pSetLayouts = &rtDescriptorSetLayout; // Use the RT layout
-            if (vkAllocateDescriptorSets(g_Device, &allocInfo, &rtDescriptorSet) != VK_SUCCESS) {
+
+        // Allocate the descriptor set if it hasn't been allocated yet
+        if (rtDescriptorSet == VK_NULL_HANDLE) {
+             VkDescriptorSetAllocateInfo allocInfo{};
+             allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+             allocInfo.descriptorPool = g_DescriptorPool;
+             allocInfo.descriptorSetCount = 1;
+             allocInfo.pSetLayouts = &rtDescriptorSetLayout;
+             if (vkAllocateDescriptorSets(g_Device, &allocInfo, &rtDescriptorSet) != VK_SUCCESS) {
                  throw std::runtime_error("Failed to allocate Ray Tracing descriptor set!");
-            }
-            std::cout << "RT Descriptor Set Allocated." << std::endl;
-         }
+             }
+             std::cout << "RT Descriptor Set Allocated." << std::endl;
+        }
 
-         // --- Prepare Descriptor Writes for the RT set (Set 1) ---
-         std::vector<VkWriteDescriptorSet> descriptorWrites;
-         std::vector<VkDescriptorImageInfo> gbufferInfos(4); // Need to keep image infos alive
+        // --- Prepare Descriptor Writes for the RT set (Set 1) ---
+        // <<< INCREASE ARRAY SIZE FOR MATERIAL BUFFER >>>
+        std::vector<VkWriteDescriptorSet> descriptorWrites;
+        std::vector<VkDescriptorImageInfo> gbufferInfos(4); // Keep image infos alive
 
-         // 0: TLAS
-         VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{}; // Keep this alive
-         tlasWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-         tlasWriteInfo.accelerationStructureCount = 1;
-         tlasWriteInfo.pAccelerationStructures = &tlasHandle; // Use the passed handle
-         VkWriteDescriptorSet tlasWrite{};
-         tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-         tlasWrite.dstSet = rtDescriptorSet; // Update the existing RT set
-         tlasWrite.dstBinding = 0; // Binding 0 in the RT layout
-         tlasWrite.dstArrayElement = 0;
-         tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-         tlasWrite.descriptorCount = 1;
-         tlasWrite.pNext = &tlasWriteInfo; // Link the AS info
-         descriptorWrites.push_back(tlasWrite);
+        VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{};
+        VkDescriptorImageInfo outputImageInfo{};
+        VkDescriptorBufferInfo materialBufferInfo{}; // <<< NEW: Keep buffer info alive >>>
 
-         // 1: Output Image (Storage)
-         VkDescriptorImageInfo outputImageInfo{}; // Keep this alive
-         outputImageInfo.imageView = rtOutput.view;
-         outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL; // Must be GENERAL for storage write
-         VkWriteDescriptorSet outputImageWrite{};
-         outputImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-         outputImageWrite.dstSet = rtDescriptorSet;
-         outputImageWrite.dstBinding = 1; // Binding 1 in the RT layout
-         outputImageWrite.dstArrayElement = 0;
-         outputImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-         outputImageWrite.descriptorCount = 1;
-         outputImageWrite.pImageInfo = &outputImageInfo;
-         descriptorWrites.push_back(outputImageWrite);
+        // --- Bindings adjusted for Material Buffer ---
+        uint32_t currentBinding = 0;
 
-         // 2: Camera UBO (REMOVED - Now in global set 0)
+        // 0: TLAS
+        tlasWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        tlasWriteInfo.accelerationStructureCount = 1;
+        tlasWriteInfo.pAccelerationStructures = &tlasHandle;
+        VkWriteDescriptorSet tlasWrite{};
+        tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        tlasWrite.pNext = &tlasWriteInfo;
+        tlasWrite.dstSet = rtDescriptorSet;
+        tlasWrite.dstBinding = currentBinding++; // Use incrementing binding index
+        tlasWrite.dstArrayElement = 0;
+        tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        tlasWrite.descriptorCount = 1;
+        descriptorWrites.push_back(tlasWrite);
 
-         // --- Bindings adjusted for removed camera ---
+        // 1: Output Image (Storage)
+        outputImageInfo.imageView = rtOutput.view;
+        outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+        VkWriteDescriptorSet outputImageWrite{};
+        outputImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        outputImageWrite.dstSet = rtDescriptorSet;
+        outputImageWrite.dstBinding = currentBinding++; // Use incrementing binding index
+        outputImageWrite.dstArrayElement = 0;
+        outputImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        outputImageWrite.descriptorCount = 1;
+        outputImageWrite.pImageInfo = &outputImageInfo;
+        descriptorWrites.push_back(outputImageWrite);
 
-         // 3: G-Buffer Position (now binding 3)
-         gbufferInfos[0].sampler = Kinesis::GBuffer::sampler;
-         gbufferInfos[0].imageView = Kinesis::GBuffer::positionAttachment.view;
-         gbufferInfos[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Layout must match usage
-         // 4: G-Buffer Normal (now binding 4)
-         gbufferInfos[1].sampler = Kinesis::GBuffer::sampler;
-         gbufferInfos[1].imageView = Kinesis::GBuffer::normalAttachment.view;
-         gbufferInfos[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-         // 5: G-Buffer Albedo (now binding 5)
-         gbufferInfos[2].sampler = Kinesis::GBuffer::sampler;
-         gbufferInfos[2].imageView = Kinesis::GBuffer::albedoAttachment.view;
-         gbufferInfos[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-         // 6: G-Buffer Properties (now binding 6)
-         gbufferInfos[3].sampler = Kinesis::GBuffer::sampler;
-         gbufferInfos[3].imageView = Kinesis::GBuffer::propertiesAttachment.view;
-         gbufferInfos[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        // 2: Material Buffer (SSBO) <<< NEW >>>
+        materialBufferInfo = Kinesis::materialBuffer->descriptorInfo(); // Get info from global buffer
+        VkWriteDescriptorSet materialWrite{};
+        materialWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        materialWrite.dstSet = rtDescriptorSet;
+        materialWrite.dstBinding = currentBinding++; // Use incrementing binding index
+        materialWrite.dstArrayElement = 0;
+        materialWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        materialWrite.descriptorCount = 1;
+        materialWrite.pBufferInfo = &materialBufferInfo;
+        descriptorWrites.push_back(materialWrite);
 
-         VkWriteDescriptorSet gbufferWriteBase{}; // Base struct for common fields
-         gbufferWriteBase.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-         gbufferWriteBase.dstSet = rtDescriptorSet; // Target the RT set
-         gbufferWriteBase.dstArrayElement = 0;
-         gbufferWriteBase.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-         gbufferWriteBase.descriptorCount = 1;
+        // 3: G-Buffer Position
+        gbufferInfos[0] = {GBuffer::sampler, GBuffer::positionAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet gbufferPosWrite{};
+        gbufferPosWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        gbufferPosWrite.dstSet = rtDescriptorSet;
+        gbufferPosWrite.dstBinding = currentBinding++; // Use incrementing binding index
+        gbufferPosWrite.dstArrayElement = 0;
+        gbufferPosWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        gbufferPosWrite.descriptorCount = 1;
+        gbufferPosWrite.pImageInfo = &gbufferInfos[0];
+        descriptorWrites.push_back(gbufferPosWrite);
 
-         // Position Write (Binding 3)
-         VkWriteDescriptorSet gbufferPosWrite = gbufferWriteBase;
-         gbufferPosWrite.dstBinding = 3; // Use correct binding index
-         gbufferPosWrite.pImageInfo = &gbufferInfos[0];
-         descriptorWrites.push_back(gbufferPosWrite);
-         // Normal Write (Binding 4)
-         VkWriteDescriptorSet gbufferNormWrite = gbufferWriteBase;
-         gbufferNormWrite.dstBinding = 4;
-         gbufferNormWrite.pImageInfo = &gbufferInfos[1];
-         descriptorWrites.push_back(gbufferNormWrite);
-         // Albedo Write (Binding 5)
-         VkWriteDescriptorSet gbufferAlbWrite = gbufferWriteBase;
-         gbufferAlbWrite.dstBinding = 5;
-         gbufferAlbWrite.pImageInfo = &gbufferInfos[2];
-         descriptorWrites.push_back(gbufferAlbWrite);
-         // Properties Write (Binding 6)
-         VkWriteDescriptorSet gbufferPropWrite = gbufferWriteBase;
-         gbufferPropWrite.dstBinding = 6;
-         gbufferPropWrite.pImageInfo = &gbufferInfos[3];
-         descriptorWrites.push_back(gbufferPropWrite);
+        // 4: G-Buffer Normal
+        gbufferInfos[1] = {GBuffer::sampler, GBuffer::normalAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet gbufferNormWrite = gbufferPosWrite; // Copy common fields
+        gbufferNormWrite.dstBinding = currentBinding++;
+        gbufferNormWrite.pImageInfo = &gbufferInfos[1];
+        descriptorWrites.push_back(gbufferNormWrite);
+
+        // 5: G-Buffer Albedo
+        gbufferInfos[2] = {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet gbufferAlbWrite = gbufferPosWrite; // Copy common fields
+        gbufferAlbWrite.dstBinding = currentBinding++;
+        gbufferAlbWrite.pImageInfo = &gbufferInfos[2];
+        descriptorWrites.push_back(gbufferAlbWrite);
+
+        // 6: G-Buffer Properties
+        gbufferInfos[3] = {GBuffer::sampler, GBuffer::propertiesAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        VkWriteDescriptorSet gbufferPropWrite = gbufferPosWrite; // Copy common fields
+        gbufferPropWrite.dstBinding = currentBinding++;
+        gbufferPropWrite.pImageInfo = &gbufferInfos[3];
+        descriptorWrites.push_back(gbufferPropWrite);
 
 
-         // --- Update the Descriptor Set ---
-         vkUpdateDescriptorSets(g_Device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-         // std::cout << "RT Descriptor Set updated." << std::endl; // Can be noisy per frame
+        // --- Update the Descriptor Set ---
+        vkUpdateDescriptorSets(g_Device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+        // std::cout << "RT Descriptor Set updated." << std::endl; // Can be noisy
     }
 
     // --- bind ---
     // Binds the RT pipeline and its descriptor sets
-    void bind(VkCommandBuffer commandBuffer, VkDescriptorSet globalSet) { // Pass global set
-        if (!Kinesis::GUI::raytracing_available || rtPipeline == VK_NULL_HANDLE || rtPipelineLayout == VK_NULL_HANDLE || rtDescriptorSet == VK_NULL_HANDLE || globalSet == VK_NULL_HANDLE) {
-             std::cerr << "Warning: Attempting to bind uninitialized ray tracing resources or missing global set!" << std::endl;
+    void bind(VkCommandBuffer commandBuffer, VkDescriptorSet globalSet)
+    { // Pass global set
+        if (!Kinesis::GUI::raytracing_available || rtPipeline == VK_NULL_HANDLE || rtPipelineLayout == VK_NULL_HANDLE || rtDescriptorSet == VK_NULL_HANDLE || globalSet == VK_NULL_HANDLE)
+        {
+            std::cerr << "Warning: Attempting to bind uninitialized ray tracing resources or missing global set!" << std::endl;
             return;
         }
         // Bind the RT pipeline
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline);
 
         // Bind descriptor sets: Set 0 = global, Set 1 = RT specific
-        std::array<VkDescriptorSet, 2> descriptorSetsToBind = { globalSet, rtDescriptorSet };
+        std::array<VkDescriptorSet, 2> descriptorSetsToBind = {globalSet, rtDescriptorSet};
         vkCmdBindDescriptorSets(
             commandBuffer,
             VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-            rtPipelineLayout, // The layout compatible with both sets
-            0, // First set index to bind
+            rtPipelineLayout,                                   // The layout compatible with both sets
+            0,                                                  // First set index to bind
             static_cast<uint32_t>(descriptorSetsToBind.size()), // Number of sets to bind
-            descriptorSetsToBind.data(), // Pointer to array of sets
-            0, nullptr); // No dynamic offsets
+            descriptorSetsToBind.data(),                        // Pointer to array of sets
+            0, nullptr);                                        // No dynamic offsets
     }
 
     // --- traceRays ---
-    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height) {
+    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height)
+    {
         // Check if the required function pointer is loaded (with pfn prefix)
-        if (!pfnCmdTraceRaysKHR) {
-             std::cerr << "Error: vkCmdTraceRaysKHR function pointer not loaded! Cannot trace rays." << std::endl;
-             return; // Or throw
+        if (!pfnCmdTraceRaysKHR)
+        {
+            std::cerr << "Error: vkCmdTraceRaysKHR function pointer not loaded! Cannot trace rays." << std::endl;
+            return; // Or throw
         }
         assert(rgenSBT.buffer != VK_NULL_HANDLE);
         assert(missSBT.buffer != VK_NULL_HANDLE);
@@ -911,12 +973,13 @@ namespace Kinesis::RayTracerManager {
             &rgenSBT.addressRegion, // RayGen SBT entry info
             &missSBT.addressRegion, // Miss SBT entry info
             &chitSBT.addressRegion, // Hit Group SBT entry info
-            nullptr, // Callable SBT entry info (if used)
-            width, height, 1); // Dimensions of the ray dispatch
+            &callableSBT.addressRegion,                // Callable SBT entry info (if used)
+            width, height, 1);      // Dimensions of the ray dispatch
     }
 
-     // --- Single Time Command Helpers ---
-    VkCommandBuffer beginSingleTimeCommands() {
+    // --- Single Time Command Helpers ---
+    VkCommandBuffer beginSingleTimeCommands()
+    {
         assert(buildCommandPool != VK_NULL_HANDLE && "Build command pool not initialized");
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -925,34 +988,35 @@ namespace Kinesis::RayTracerManager {
         allocInfo.commandBufferCount = 1;
 
         VkCommandBuffer commandBuffer;
-        if (vkAllocateCommandBuffers(g_Device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
-             throw std::runtime_error("Failed to allocate single-time command buffer!");
+        if (vkAllocateCommandBuffers(g_Device, &allocInfo, &commandBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to allocate single-time command buffer!");
         }
-
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; // Execute once then reset/free
 
-        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-             vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup allocated buffer
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)
+        {
+            vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup allocated buffer
             throw std::runtime_error("Failed to begin single-time command buffer!");
         }
-
 
         return commandBuffer;
     }
 
-    void endSingleTimeCommands(VkCommandBuffer commandBuffer) {
-         assert(g_Queue != VK_NULL_HANDLE && "Graphics queue not initialized");
-         assert(buildCommandPool != VK_NULL_HANDLE && "Build command pool not initialized");
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer)
+    {
+        assert(g_Queue != VK_NULL_HANDLE && "Graphics queue not initialized");
+        assert(buildCommandPool != VK_NULL_HANDLE && "Build command pool not initialized");
 
-         if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-              // Don't free buffer here if caller might retry, but log error
-              // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer);
-             throw std::runtime_error("Failed to end single-time command buffer!");
-         }
-
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
+        {
+            // Don't free buffer here if caller might retry, but log error
+            // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer);
+            throw std::runtime_error("Failed to end single-time command buffer!");
+        }
 
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -963,16 +1027,18 @@ namespace Kinesis::RayTracerManager {
         VkFence fence;
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        if (vkCreateFence(g_Device, &fenceInfo, nullptr, &fence) != VK_SUCCESS) {
-             // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup command buffer if fence fails
-             throw std::runtime_error("Failed to create fence for single-time command buffer!");
+        if (vkCreateFence(g_Device, &fenceInfo, nullptr, &fence) != VK_SUCCESS)
+        {
+            // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup command buffer if fence fails
+            throw std::runtime_error("Failed to create fence for single-time command buffer!");
         }
 
         // Submit to the queue
         VkResult queueResult = vkQueueSubmit(g_Queue, 1, &submitInfo, fence);
-        if (queueResult != VK_SUCCESS) {
-             vkDestroyFence(g_Device, fence, nullptr); // Cleanup fence
-             // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup command buffer
+        if (queueResult != VK_SUCCESS)
+        {
+            vkDestroyFence(g_Device, fence, nullptr); // Cleanup fence
+                                                      // vkFreeCommandBuffers(g_Device, buildCommandPool, 1, &commandBuffer); // Cleanup command buffer
             throw std::runtime_error("Failed to submit single-time command buffer! Error code: " + std::to_string(queueResult));
         }
 
@@ -985,42 +1051,48 @@ namespace Kinesis::RayTracerManager {
     }
 
     // --- create_blas ---
-    void create_blas() {
+    void create_blas()
+    {
         // Check required function pointers (with pfn prefix)
-        if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR) {
+        if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR)
+        {
             throw std::runtime_error("Required BLAS build function pointers not loaded!");
         }
 
         // Clean up existing BLAS first
-         for (auto& b : blas) delete_acceleration_structure(b);
-         blas.clear();
+        for (auto &b : blas)
+            delete_acceleration_structure(b);
+        blas.clear();
 
         uint32_t blasIndex = 0; // Keep track of which blas corresponds to which game object
-        for (const auto& gameObject : Kinesis::gameObjects) {
-            if (!gameObject.model || !gameObject.model->getMesh() || gameObject.model->getMesh()->numVertices() == 0) continue;
+        for (const auto &gameObject : Kinesis::gameObjects)
+        {
+            if (!gameObject.model || !gameObject.model->getMesh() || gameObject.model->getMesh()->numVertices() == 0)
+                continue;
 
             // 1. Get Geometry Data Pointers/Addresses
             VkBuffer vertexBuffer = gameObject.model->getVertexBuffer();
             VkBuffer indexBuffer = gameObject.model->getIndexBuffer(); // Get index buffer
             bool hasIndices = gameObject.model->getMesh()->hasIndices();
 
-            if (vertexBuffer == VK_NULL_HANDLE || (hasIndices && indexBuffer == VK_NULL_HANDLE)) {
-                 std::cerr << "Warning: Skipping BLAS creation for GameObject '" << gameObject.name << "' due to missing buffers." << std::endl;
-                 continue;
+            if (vertexBuffer == VK_NULL_HANDLE || (hasIndices && indexBuffer == VK_NULL_HANDLE))
+            {
+                std::cerr << "Warning: Skipping BLAS creation for GameObject '" << gameObject.name << "' due to missing buffers." << std::endl;
+                continue;
             }
 
-            uint64_t vertexBufferAddress = getBufferDeviceAddress(vertexBuffer); // Uses helper -> pointer
+            uint64_t vertexBufferAddress = getBufferDeviceAddress(vertexBuffer);                // Uses helper -> pointer
             uint64_t indexBufferAddress = hasIndices ? getBufferDeviceAddress(indexBuffer) : 0; // Uses helper -> pointer
             uint32_t vertexCount = gameObject.model->getMesh()->numVertices();
             uint32_t indexCount = gameObject.model->getMesh()->numIndices();
             // Calculate primitive count based on indices or vertices
             uint32_t primitiveCount = hasIndices ? (indexCount / 3) : (vertexCount / 3);
 
-            if (primitiveCount == 0) {
-                 std::cerr << "Warning: Skipping BLAS creation for GameObject '" << gameObject.name << "' due to zero primitives." << std::endl;
-                 continue;
+            if (primitiveCount == 0)
+            {
+                std::cerr << "Warning: Skipping BLAS creation for GameObject '" << gameObject.name << "' due to zero primitives." << std::endl;
+                continue;
             }
-
 
             // 2. Define Acceleration Structure Geometry (Triangles)
             VkAccelerationStructureGeometryKHR accelGeom{};
@@ -1031,14 +1103,17 @@ namespace Kinesis::RayTracerManager {
             accelGeom.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT; // Match Kinesis::Mesh::Vertex position
             accelGeom.geometry.triangles.vertexData.deviceAddress = vertexBufferAddress;
             accelGeom.geometry.triangles.vertexStride = sizeof(Kinesis::Mesh::Vertex); // Stride is the size of the vertex struct
-            accelGeom.geometry.triangles.maxVertex = vertexCount -1; // Highest vertex index used
+            accelGeom.geometry.triangles.maxVertex = vertexCount - 1;                  // Highest vertex index used
 
-            if (hasIndices) {
+            if (hasIndices)
+            {
                 accelGeom.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32; // Assuming 32-bit indices
                 accelGeom.geometry.triangles.indexData.deviceAddress = indexBufferAddress;
-            } else {
-                 accelGeom.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_KHR; // Not using indices
-                 accelGeom.geometry.triangles.indexData.deviceAddress = 0;
+            }
+            else
+            {
+                accelGeom.geometry.triangles.indexType = VK_INDEX_TYPE_NONE_KHR; // Not using indices
+                accelGeom.geometry.triangles.indexData.deviceAddress = 0;
             }
             accelGeom.geometry.triangles.transformData = {}; // No transform for BLAS geometry itself
 
@@ -1049,7 +1124,7 @@ namespace Kinesis::RayTracerManager {
             // Prefer fast trace, allow updates if needed later (though BLAS updates are less common)
             buildGeomInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
             buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR; // Build mode
-            buildGeomInfo.geometryCount = 1; // One geometry description per BLAS for simplicity
+            buildGeomInfo.geometryCount = 1;                                     // One geometry description per BLAS for simplicity
             buildGeomInfo.pGeometries = &accelGeom;
 
             VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{};
@@ -1060,26 +1135,26 @@ namespace Kinesis::RayTracerManager {
                 VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, // Build on device
                 &buildGeomInfo,
                 &primitiveCount, // Number of triangles/primitives
-                &buildSizesInfo
-            );
+                &buildSizesInfo);
 
             // 4. Create BLAS Buffer and AS Object
             AccelerationStructure blasEntry; // Create a new entry for this object
             Kinesis::Window::createBuffer(buildSizesInfo.accelerationStructureSize,
-                                        VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                        blasEntry.buffer, blasEntry.memory);
+                                          VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                          blasEntry.buffer, blasEntry.memory);
 
             VkAccelerationStructureCreateInfoKHR createInfo{};
             createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
             createInfo.buffer = blasEntry.buffer;
             createInfo.size = buildSizesInfo.accelerationStructureSize;
             createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-             // Call function via loaded pointer (with pfn prefix)
-            if(pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &blasEntry.structure) != VK_SUCCESS){
-                  // Cleanup buffer/memory if AS creation fails
-                  delete_acceleration_structure(blasEntry); // Use helper to clean up
-                 throw std::runtime_error("Failed to create BLAS for GameObject '" + gameObject.name + "'!");
+            // Call function via loaded pointer (with pfn prefix)
+            if (pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &blasEntry.structure) != VK_SUCCESS)
+            {
+                // Cleanup buffer/memory if AS creation fails
+                delete_acceleration_structure(blasEntry); // Use helper to clean up
+                throw std::runtime_error("Failed to create BLAS for GameObject '" + gameObject.name + "'!");
             }
             // Get the device address *after* the AS is created and bound to the buffer implicitly
             VkAccelerationStructureDeviceAddressInfoKHR addressInfo{};
@@ -1088,27 +1163,26 @@ namespace Kinesis::RayTracerManager {
             // Call function via loaded pointer (with pfn prefix)
             blasEntry.address = pfnGetAccelerationStructureDeviceAddressKHR(g_Device, &addressInfo);
 
-
             // 5. Create Scratch Buffer
             ScratchBuffer scratch = create_scratch_buffer(buildSizesInfo.buildScratchSize);
 
             // 6. Build BLAS on GPU using a command buffer
             VkCommandBuffer cmdBuf = beginSingleTimeCommands();
 
-             // Update buildGeomInfo for the build command
-             buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-             buildGeomInfo.dstAccelerationStructure = blasEntry.structure; // Target AS object
-             buildGeomInfo.scratchData.deviceAddress = scratch.address;   // Scratch buffer address
+            // Update buildGeomInfo for the build command
+            buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+            buildGeomInfo.dstAccelerationStructure = blasEntry.structure; // Target AS object
+            buildGeomInfo.scratchData.deviceAddress = scratch.address;    // Scratch buffer address
 
-             // Define build range info (describes the primitives to build)
-             VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
-             buildRangeInfo.primitiveCount = primitiveCount;
-             buildRangeInfo.primitiveOffset = 0; // Offset into index/vertex buffer
-             buildRangeInfo.firstVertex = 0;     // Offset for non-indexed geometry
-             buildRangeInfo.transformOffset = 0; // Offset for transform data (usually 0 for BLAS)
-             const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
+            // Define build range info (describes the primitives to build)
+            VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+            buildRangeInfo.primitiveCount = primitiveCount;
+            buildRangeInfo.primitiveOffset = 0; // Offset into index/vertex buffer
+            buildRangeInfo.firstVertex = 0;     // Offset for non-indexed geometry
+            buildRangeInfo.transformOffset = 0; // Offset for transform data (usually 0 for BLAS)
+            const VkAccelerationStructureBuildRangeInfoKHR *pBuildRangeInfo = &buildRangeInfo;
 
-             // Call function via loaded pointer (with pfn prefix)
+            // Call function via loaded pointer (with pfn prefix)
             pfnCmdBuildAccelerationStructuresKHR(cmdBuf, 1, &buildGeomInfo, &pBuildRangeInfo);
 
             // Barrier: Ensure BLAS build completes before scratch buffer is destroyed/reused
@@ -1118,13 +1192,12 @@ namespace Kinesis::RayTracerManager {
             barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR; // Write finished
             barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;  // Ready for read (TLAS build, shader access)
             vkCmdPipelineBarrier(cmdBuf,
-                                 VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, // Source stage
+                                 VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,                                                // Source stage
                                  VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, // Dest stages
-                                 0, // No dependency flags needed usually
-                                 1, &barrier, // Memory barrier
-                                 0, nullptr, // Buffer barriers
-                                 0, nullptr); // Image barriers
-
+                                 0,                                                                                                     // No dependency flags needed usually
+                                 1, &barrier,                                                                                           // Memory barrier
+                                 0, nullptr,                                                                                            // Buffer barriers
+                                 0, nullptr);                                                                                           // Image barriers
 
             endSingleTimeCommands(cmdBuf); // Submit and wait for completion
 
@@ -1133,122 +1206,129 @@ namespace Kinesis::RayTracerManager {
 
             // 8. Store BLAS
             blas.push_back(blasEntry); // Add the newly created BLAS to the vector
-            blasIndex++; // Increment for the next object
+            blasIndex++;               // Increment for the next object
         }
         std::cout << "Created " << blas.size() << " BLAS objects." << std::endl;
     }
 
     // --- create_tlas ---
-    void create_tlas(bool allow_update) {
-         // Check required function pointers (with pfn prefix)
-         if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR) {
-             throw std::runtime_error("Required TLAS build function pointers not loaded!");
-         }
+    void create_tlas(bool allow_update)
+    {
+        // Check required function pointers (with pfn prefix)
+        if (!pfnGetAccelerationStructureBuildSizesKHR || !pfnCreateAccelerationStructureKHR || !pfnGetAccelerationStructureDeviceAddressKHR || !pfnCmdBuildAccelerationStructuresKHR || !pfnGetBufferDeviceAddressKHR)
+        {
+            throw std::runtime_error("Required TLAS build function pointers not loaded!");
+        }
 
-         // Delete previous TLAS and instance buffer if they exist
-         if (tlas.structure != VK_NULL_HANDLE) {
-             delete_acceleration_structure(tlas); // Cleans up buffer/memory too using pointer
-             tlas = {}; // Reset struct
-         }
-         if (instances_buffer != VK_NULL_HANDLE) {
-              vkDestroyBuffer(g_Device, instances_buffer, nullptr);
-              instances_buffer = VK_NULL_HANDLE;
-         }
-          if (instances_buffer_memory != VK_NULL_HANDLE) {
-               vkFreeMemory(g_Device, instances_buffer_memory, nullptr);
-               instances_buffer_memory = VK_NULL_HANDLE;
-          }
-
+        // Delete previous TLAS and instance buffer if they exist
+        if (tlas.structure != VK_NULL_HANDLE)
+        {
+            delete_acceleration_structure(tlas); // Cleans up buffer/memory too using pointer
+            tlas = {};                           // Reset struct
+        }
+        if (instances_buffer != VK_NULL_HANDLE)
+        {
+            vkDestroyBuffer(g_Device, instances_buffer, nullptr);
+            instances_buffer = VK_NULL_HANDLE;
+        }
+        if (instances_buffer_memory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(g_Device, instances_buffer_memory, nullptr);
+            instances_buffer_memory = VK_NULL_HANDLE;
+        }
 
         // Create instance descriptions for each object that has a corresponding BLAS
         std::vector<VkAccelerationStructureInstanceKHR> instances;
         uint32_t customInstanceIndex = 0; // Track index for shaders (e.g., material lookup)
         // Ensure blas vector size matches gameObjects or use a map
         // Basic check: ensure we don't access blas out of bounds
-        if (blas.size() < Kinesis::gameObjects.size()) {
-             std::cerr << "Warning: Fewer BLAS (" << blas.size()
-                       << ") than game objects (" << Kinesis::gameObjects.size()
-                       << "). TLAS might be incomplete." << std::endl;
+        if (blas.size() < Kinesis::gameObjects.size())
+        {
+            std::cerr << "Warning: Fewer BLAS (" << blas.size()
+                      << ") than game objects (" << Kinesis::gameObjects.size()
+                      << "). TLAS might be incomplete." << std::endl;
         }
 
-        for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i) {
-             // Ensure object has model and a corresponding BLAS was created and exists at index i
-             if (i >= blas.size() || !gameObjects[i].model || blas[i].address == 0) {
-                 // Optionally log skipped object
-                 // std::cout << "Skipping TLAS instance for object " << i << std::endl;
-                 continue;
-             }
+        for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i)
+        {
+            // Ensure object has model and a corresponding BLAS was created and exists at index i
+            if (i >= blas.size() || !gameObjects[i].model || blas[i].address == 0)
+            {
+                // Optionally log skipped object
+                // std::cout << "Skipping TLAS instance for object " << i << std::endl;
+                continue;
+            }
 
+            VkAccelerationStructureInstanceKHR instance{};
+            // Convert glm::mat4 to VkTransformMatrixKHR (row-major)
+            glm::mat4 modelMatrix = gameObjects[i].transform.mat4();
+            // Vulkan expects row-major, glm is column-major by default, so transpose
+            glm::mat4 transposed = glm::transpose(modelMatrix);
+            memcpy(&instance.transform, &transposed, sizeof(VkTransformMatrixKHR));
 
-             VkAccelerationStructureInstanceKHR instance{};
-             // Convert glm::mat4 to VkTransformMatrixKHR (row-major)
-             glm::mat4 modelMatrix = gameObjects[i].transform.mat4();
-             // Vulkan expects row-major, glm is column-major by default, so transpose
-             glm::mat4 transposed = glm::transpose(modelMatrix);
-             memcpy(&instance.transform, &transposed, sizeof(VkTransformMatrixKHR));
-
-             instance.instanceCustomIndex = customInstanceIndex++; // Unique ID accessible in shaders
-             instance.mask = 0xFF; // Visibility mask (default: visible to all rays)
-             // Offset into the SBT hit group records.
-             // Simple case: All instances use the same hit group (index 2 from group creation), offset 0.
-             // Complex case: Different materials -> different hit groups -> different offsets.
-             instance.instanceShaderBindingTableRecordOffset = 0;
-             instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR; // Example: Disable backface culling for this instance
-             instance.accelerationStructureReference = blas[i].address; // Address of the BLAS for this instance
-             instances.push_back(instance);
+            instance.instanceCustomIndex = customInstanceIndex++; // Unique ID accessible in shaders
+            instance.mask = 0xFF;                                 // Visibility mask (default: visible to all rays)
+            // Offset into the SBT hit group records.
+            // Simple case: All instances use the same hit group (index 2 from group creation), offset 0.
+            // Complex case: Different materials -> different hit groups -> different offsets.
+            instance.instanceShaderBindingTableRecordOffset = 0;
+            instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR; // Example: Disable backface culling for this instance
+            instance.accelerationStructureReference = blas[i].address;                  // Address of the BLAS for this instance
+            instances.push_back(instance);
         }
 
-        if (instances.empty()) {
-             std::cerr << "Warning: No valid instances with corresponding BLAS found. Skipping TLAS build." << std::endl;
-             return; // Nothing to build
+        if (instances.empty())
+        {
+            std::cerr << "Warning: No valid instances with corresponding BLAS found. Skipping TLAS build." << std::endl;
+            return; // Nothing to build
         }
 
         // Create and upload instances buffer
         VkDeviceSize instanceBufferSize = sizeof(VkAccelerationStructureInstanceKHR) * instances.size();
         // Usage flags for instance buffer
         const VkBufferUsageFlags instanceBufferUsage =
-             VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
-             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-             VK_BUFFER_USAGE_TRANSFER_DST_BIT; // Need transfer destination
+            VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+            VK_BUFFER_USAGE_TRANSFER_DST_BIT; // Need transfer destination
 
         // Use helper to create device-local buffer
-         Kinesis::Window::createBuffer(instanceBufferSize, instanceBufferUsage,
-                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                    instances_buffer, instances_buffer_memory);
+        Kinesis::Window::createBuffer(instanceBufferSize, instanceBufferUsage,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      instances_buffer, instances_buffer_memory);
 
-         // Upload instance data (using staging buffer for device-local memory)
-         VkBuffer stagingBuffer;
-         VkDeviceMemory stagingMemory;
-         Kinesis::Window::createBuffer(instanceBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingMemory);
-         void* data;
-         vkMapMemory(g_Device, stagingMemory, 0, instanceBufferSize, 0, &data);
-         memcpy(data, instances.data(), instanceBufferSize);
-         vkUnmapMemory(g_Device, stagingMemory);
+        // Upload instance data (using staging buffer for device-local memory)
+        VkBuffer stagingBuffer;
+        VkDeviceMemory stagingMemory;
+        Kinesis::Window::createBuffer(instanceBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingMemory);
+        void *data;
+        vkMapMemory(g_Device, stagingMemory, 0, instanceBufferSize, 0, &data);
+        memcpy(data, instances.data(), instanceBufferSize);
+        vkUnmapMemory(g_Device, stagingMemory);
 
-         VkCommandBuffer cmdBufCopy = beginSingleTimeCommands();
-         VkBufferCopy copyRegion{};
-         copyRegion.size = instanceBufferSize;
-         vkCmdCopyBuffer(cmdBufCopy, stagingBuffer, instances_buffer, 1, &copyRegion);
-         // Barrier: Ensure copy finishes before TLAS build reads the instance buffer
-          VkBufferMemoryBarrier bufferBarrier = {};
-          bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
-          bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-          bufferBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR; // Read by AS build
-          bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-          bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-          bufferBarrier.buffer = instances_buffer;
-          bufferBarrier.offset = 0;
-          bufferBarrier.size = instanceBufferSize;
-          vkCmdPipelineBarrier(cmdBufCopy,
-                               VK_PIPELINE_STAGE_TRANSFER_BIT, // Source stage
-                               VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, // Destination stage
-                               0, 0, nullptr, 1, &bufferBarrier, 0, nullptr);
+        VkCommandBuffer cmdBufCopy = beginSingleTimeCommands();
+        VkBufferCopy copyRegion{};
+        copyRegion.size = instanceBufferSize;
+        vkCmdCopyBuffer(cmdBufCopy, stagingBuffer, instances_buffer, 1, &copyRegion);
+        // Barrier: Ensure copy finishes before TLAS build reads the instance buffer
+        VkBufferMemoryBarrier bufferBarrier = {};
+        bufferBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        bufferBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        bufferBarrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR; // Read by AS build
+        bufferBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bufferBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        bufferBarrier.buffer = instances_buffer;
+        bufferBarrier.offset = 0;
+        bufferBarrier.size = instanceBufferSize;
+        vkCmdPipelineBarrier(cmdBufCopy,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT,                         // Source stage
+                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, // Destination stage
+                             0, 0, nullptr, 1, &bufferBarrier, 0, nullptr);
 
-         endSingleTimeCommands(cmdBufCopy); // Submits and waits
+        endSingleTimeCommands(cmdBufCopy); // Submits and waits
 
-         // Clean up staging buffer
-         vkDestroyBuffer(g_Device, stagingBuffer, nullptr);
-         vkFreeMemory(g_Device, stagingMemory, nullptr);
+        // Clean up staging buffer
+        vkDestroyBuffer(g_Device, stagingBuffer, nullptr);
+        vkFreeMemory(g_Device, stagingMemory, nullptr);
 
         // Get address using loaded pointer (via helper)
         uint64_t instanceBufferAddr = getBufferDeviceAddress(instances_buffer);
@@ -1259,41 +1339,42 @@ namespace Kinesis::RayTracerManager {
         tlasGeometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
         tlasGeometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR; // Usually opaque for TLAS
         tlasGeometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-        tlasGeometry.geometry.instances.arrayOfPointers = VK_FALSE; // Data is a packed array
+        tlasGeometry.geometry.instances.arrayOfPointers = VK_FALSE;              // Data is a packed array
         tlasGeometry.geometry.instances.data.deviceAddress = instanceBufferAddr; // Address of instance data on GPU
 
         // Get TLAS build sizes
-         VkAccelerationStructureBuildGeometryInfoKHR buildGeomInfo{};
-         buildGeomInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-         buildGeomInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-         buildGeomInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
-         if (allow_update) {
-             buildGeomInfo.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
-         }
-         buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR; // Initial build
-         buildGeomInfo.geometryCount = 1; // One geometry struct (pointing to instance buffer)
-         buildGeomInfo.pGeometries = &tlasGeometry;
+        VkAccelerationStructureBuildGeometryInfoKHR buildGeomInfo{};
+        buildGeomInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+        buildGeomInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        buildGeomInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+        if (allow_update)
+        {
+            buildGeomInfo.flags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
+        }
+        buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR; // Initial build
+        buildGeomInfo.geometryCount = 1;                                     // One geometry struct (pointing to instance buffer)
+        buildGeomInfo.pGeometries = &tlasGeometry;
 
-         uint32_t instanceCount = static_cast<uint32_t>(instances.size());
-         VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{};
-         buildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-          // Call function via loaded pointer (with pfn prefix)
-         pfnGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeomInfo, &instanceCount, &buildSizesInfo);
-
+        uint32_t instanceCount = static_cast<uint32_t>(instances.size());
+        VkAccelerationStructureBuildSizesInfoKHR buildSizesInfo{};
+        buildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+        // Call function via loaded pointer (with pfn prefix)
+        pfnGetAccelerationStructureBuildSizesKHR(g_Device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildGeomInfo, &instanceCount, &buildSizesInfo);
 
         // Create TLAS buffer and object
-         Kinesis::Window::createBuffer(buildSizesInfo.accelerationStructureSize,
-                                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-                                    tlas.buffer, tlas.memory);
+        Kinesis::Window::createBuffer(buildSizesInfo.accelerationStructureSize,
+                                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                                      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                      tlas.buffer, tlas.memory);
 
         VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.buffer = tlas.buffer;
         createInfo.size = buildSizesInfo.accelerationStructureSize;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-         // Call function via loaded pointer (with pfn prefix)
-        if (pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &tlas.structure) != VK_SUCCESS) {
+        // Call function via loaded pointer (with pfn prefix)
+        if (pfnCreateAccelerationStructureKHR(g_Device, &createInfo, nullptr, &tlas.structure) != VK_SUCCESS)
+        {
             delete_acceleration_structure(tlas); // Cleanup buffer/memory using pointer
             throw std::runtime_error("Failed to create TLAS!");
         }
@@ -1303,7 +1384,6 @@ namespace Kinesis::RayTracerManager {
         tlasAddressInfo.accelerationStructure = tlas.structure;
         tlas.address = pfnGetAccelerationStructureDeviceAddressKHR(g_Device, &tlasAddressInfo);
 
-
         // Create scratch buffer for TLAS build
         ScratchBuffer scratch = create_scratch_buffer(buildSizesInfo.buildScratchSize);
 
@@ -1311,19 +1391,19 @@ namespace Kinesis::RayTracerManager {
         VkCommandBuffer cmdBufBuild = beginSingleTimeCommands();
 
         // Update buildGeomInfo for the build command
-         buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-         buildGeomInfo.dstAccelerationStructure = tlas.structure; // Target TLAS object
-         buildGeomInfo.scratchData.deviceAddress = scratch.address; // Scratch buffer
+        buildGeomInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        buildGeomInfo.dstAccelerationStructure = tlas.structure;   // Target TLAS object
+        buildGeomInfo.scratchData.deviceAddress = scratch.address; // Scratch buffer
 
-         // Define build range info for the instances
-         VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
-         buildRangeInfo.primitiveCount = instanceCount; // Number of instances in the buffer
-         buildRangeInfo.primitiveOffset = 0; // Offset in the instance buffer
-         buildRangeInfo.firstVertex = 0;     // Not used for instances
-         buildRangeInfo.transformOffset = 0; // Not used for instances
-         const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
+        // Define build range info for the instances
+        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+        buildRangeInfo.primitiveCount = instanceCount; // Number of instances in the buffer
+        buildRangeInfo.primitiveOffset = 0;            // Offset in the instance buffer
+        buildRangeInfo.firstVertex = 0;                // Not used for instances
+        buildRangeInfo.transformOffset = 0;            // Not used for instances
+        const VkAccelerationStructureBuildRangeInfoKHR *pBuildRangeInfo = &buildRangeInfo;
 
-         // Call function via loaded pointer (with pfn prefix)
+        // Call function via loaded pointer (with pfn prefix)
         pfnCmdBuildAccelerationStructuresKHR(cmdBufBuild, 1, &buildGeomInfo, &pBuildRangeInfo);
 
         // Barrier: Ensure TLAS build completes before scratch is deleted and before TLAS is used for tracing
@@ -1332,18 +1412,16 @@ namespace Kinesis::RayTracerManager {
         barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
         barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR; // Ready for shader read
         vkCmdPipelineBarrier(cmdBufBuild,
-                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, // Source: Build stage
+                             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,                                                // Source: Build stage
                              VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR | VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, // Dest: Build (for scratch reuse) & RT Shader
                              0, 1, &barrier, 0, nullptr, 0, nullptr);
-
 
         endSingleTimeCommands(cmdBufBuild); // Submit and wait
 
         // Cleanup scratch buffer
         delete_scratch_buffer(scratch);
 
-         std::cout << "TLAS created successfully with " << instanceCount << " instances." << std::endl;
+        std::cout << "TLAS created successfully with " << instanceCount << " instances." << std::endl;
     }
-
 
 } // namespace Kinesis::RayTracerManager

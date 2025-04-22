@@ -25,22 +25,24 @@ namespace Kinesis::Mesh {
 	class Material {
 	public:
 		// Constructor initializes all relevant properties
-		Material(const std::string &texture_file, // Keep track of texture file if needed for loading elsewhere
-                 const glm::vec3 &d_color,      // Base diffuse/albedo color
-                 const glm::vec3 &r_color,      // Specular/Reflective color tint (can be vec3(1.0) for metals)
-                 const glm::vec3 &t_color,      // Transmissive color tint
-                 const glm::vec3 &e_color,      // Emitted color (for lights)
-                 float roughness_,              // Surface roughness (0=smooth, 1=rough)
-                 float indexOfRefraction_,      // Index of Refraction (for dielectrics)
-                 MaterialType type_) :          // The type of material
-            textureFile(texture_file),
-            diffuseColor(d_color),
-            reflectiveColor(r_color),
-            transmissiveColor(t_color),
-            emittedColor(e_color),
-            roughness(roughness_),
-            indexOfRefraction(indexOfRefraction_),
-            type(type_)
+		Material(const std::string &mat_name,         // Material name
+            const glm::vec3 &d_color,      // Base diffuse/albedo color
+            const glm::vec3 &r_color,      // Specular/Reflective color tint (Ks)
+            const glm::vec3 &t_color,      // Transmissive color tint (Tf)
+            const glm::vec3 &e_color,      // Emitted color (for lights)
+            float roughness_,              // Surface roughness (0=smooth, 1=rough)
+            float indexOfRefraction_,      // Index of Refraction (for dielectrics)
+            MaterialType type_,            // The type of material
+            const std::string &texture_path = "") : // Texture file path (optional)
+       name(mat_name), // Store name
+       diffuseColor(d_color),
+       reflectiveColor(r_color),
+       transmissiveColor(t_color),
+       emittedColor(e_color),
+       roughness(roughness_),
+       indexOfRefraction(indexOfRefraction_),
+       type(type_),
+       textureFile(texture_path) // Store texture path
         {
              // Texture loading itself should happen in a dedicated texture manager
              // or be handled directly by the system loading the model/material.
@@ -50,6 +52,7 @@ namespace Kinesis::Mesh {
 		~Material() = default; // Default destructor is likely sufficient
 
 		// --- ACCESSORS for properties needed by G-Buffer/Raytracer ---
+        const std::string& getName() const { return name; } 
 		const glm::vec3& getDiffuseColor() const { return diffuseColor; }
 		const glm::vec3& getReflectiveColor() const { return reflectiveColor; }
 		const glm::vec3& getTransmissiveColor() const { return transmissiveColor; }
@@ -82,6 +85,7 @@ namespace Kinesis::Mesh {
 
 		// --- REPRESENTATION ---
 		// Core material properties used by modern renderers
+        std::string name;
 		glm::vec3 diffuseColor;       // Base Color / Albedo
 		glm::vec3 reflectiveColor;    // Specular Tint (often vec3(1) for pure metals, or tint for non-metals)
 		glm::vec3 transmissiveColor;  // Color for transmitted light (refraction)

@@ -148,7 +148,7 @@ namespace Kinesis::Mesh {
                               glm::vec3 norm = (vn_idx >= 0 && vn_idx < temp_normals.size()) ? temp_normals[vn_idx] : glm::vec3(0.0f, 1.0f, 0.0f); // Default normal if missing
 
                               // Assign a default color or color based on material later
-                              glm::vec3 color = glm::vec3(1.0f); // Default white
+                              glm::vec3 color = glm::vec3(1.0f, 0.f, 0.f); // debugi red
 
                               // Assign an index for the new vertex
                               uint32_t new_index = static_cast<uint32_t>(m_vertices.size());
@@ -221,7 +221,7 @@ namespace Kinesis::Mesh {
         return true;
     }
 
-    bool Mesh::parseMtl(const std::string& mtlFilePath, const std::string& /*basePath*/) {
+    bool Mesh::parseMtl(const std::string& mtlFilePath, const std::string& basePath) { // Keep basePath if needed for textures
         std::ifstream mtlfile(mtlFilePath);
         if (!mtlfile.is_open()) {
             std::cerr << "ERROR! Cannot open MTL file: " << mtlFilePath << std::endl;
@@ -233,81 +233,183 @@ namespace Kinesis::Mesh {
         Material* currentMaterial = nullptr;
         std::string line;
 
+        // Default values for a new material
+        std::string name = "default";
+        glm::vec3 diffuseColor(0.8f);
+        glm::vec3 specularColor(0.0f); // Ks
+        glm::vec3 transmissiveColor(0.0f); // Tf (often used for transmission filter)
+        glm::vec3 emissiveColor(0.0f); // Ke
+        float roughness = 0.8f; // Derived from Ns later
+        float ior = 1.5f; // Ni - default glass IOR
+        float opacity = 1.0f; // d
+        int illumModel = 1; // Default illum
+        std::string textureFile = "";
+        MaterialType matType = MaterialType::DIFFUSE; // Default type
+
         while (std::getline(mtlfile, line)) {
+            // Trim whitespace
+            line.erase(0, line.find_first_not_of(" \t\r\n"));
+            line.erase(line.find_last_not_of(" \t\r\n") + 1);
+            if (line.empty() || line[0] == '#') continue;
+
             std::stringstream ss(line);
             std::string token;
             ss >> token;
 
             if (token == "newmtl") {
-                std::string name;
-                ss >> name;
-                 // Create a new material (placeholder values)
-                 currentMaterial = new Material(
-                    name,
-                    glm::vec3(0.8f, 0.8f, 0.8f), // Diffuse
-                    glm::vec3(0.0f),             // Reflective
-                    glm::vec3(0.0f),             // Transmissive
-                    glm::vec3(0.0f),             // Emissive
-                    0.5f,                        // Roughness
-                    1.5f,                        // IOR
-                    MaterialType::DIFFUSE        // Type
-                );
-                 m_materials.push_back(currentMaterial);
-                 std::cout << "  Defined material: " << name << std::endl;
-            } else if (token == "Kd" && currentMaterial) { // Diffuse color
-                glm::vec3 color;
-                ss >> color.x >> color.y >> color.z;
-                // TODO: Update currentMaterial->diffuseColor (requires adding setter or modifying constructor/material management)
-                std::cout << "    Kd: " << color.x << " " << color.y << " " << color.z << std::endl;
-            } else if (token == "Ks" && currentMaterial) { // Specular color
-                 glm::vec3 color;
-                 ss >> color.x >> color.y >> color.z;
-                 // TODO: Update currentMaterial->reflectiveColor
-                 std::cout << "    Ks: " << color.x << " " << color.y << " " << color.z << std::endl;
-            } else if (token == "Ke" && currentMaterial) { // Emissive color
-                glm::vec3 color;
-                ss >> color.x >> color.y >> color.z;
-                 // TODO: Update currentMaterial->emissiveColor
-                 std::cout << "    Ke: " << color.x << " " << color.y << " " << color.z << std::endl;
-            } else if (token == "Ni" && currentMaterial) { // Index of Refraction
-                 float ior;
-                 ss >> ior;
-                 // TODO: Update currentMaterial->indexOfRefraction
-                 std::cout << "    Ni: " << ior << std::endl;
-            } else if (token == "Ns" && currentMaterial) { // Specular Exponent (related to roughness, conversion needed)
+                // If we were defining a previous material, finalize and add it
+                if (currentMaterial) {
+                    // Update properties based on parsed values BEFORE creating the new one
+                     // Note: Material constructor needs updating or setters are needed
+                     // This example assumes we create the material *after* parsing its block
+                }
+
+                 // Reset defaults for the new material
+                 ss >> std::ws >> name; // Read name
+                 diffuseColor = glm::vec3(0.8f);
+                 specularColor = glm::vec3(0.0f);
+                 transmissiveColor = glm::vec3(0.0f);
+                 emissiveColor = glm::vec3(0.0f);
+                 roughness = 0.8f;
+                 ior = 1.5f;
+                 opacity = 1.0f;
+                 illumModel = 1;
+                 textureFile = "";
+                 matType = MaterialType::DIFFUSE;
+
+                 // Create a placeholder - we'll configure it as we parse
+                 // Or, better: store parsed values and create the Material object at the END
+                 // of the file or before the next "newmtl"
+                 std::cout << "  Defining material: " << name << std::endl;
+
+
+            } else if (token == "Kd") { // Diffuse color
+                 if (!(ss >> diffuseColor.x >> diffuseColor.y >> diffuseColor.z)) {
+                      std::cerr << "    Warning: Malformed Kd in material " << name << std::endl;
+                 }
+            } else if (token == "Ks") { // Specular color (can indicate metalness or just specularity)
+                 if (!(ss >> specularColor.x >> specularColor.y >> specularColor.z)) {
+                     std::cerr << "    Warning: Malformed Ks in material " << name << std::endl;
+                 }
+            } else if (token == "Ke") { // Emissive color
+                 if (!(ss >> emissiveColor.x >> emissiveColor.y >> emissiveColor.z)) {
+                      std::cerr << "    Warning: Malformed Ke in material " << name << std::endl;
+                 }
+            } else if (token == "Tf") { // Transmission Filter (often indicates dielectric color)
+                 if (!(ss >> transmissiveColor.x >> transmissiveColor.y >> transmissiveColor.z)) {
+                     std::cerr << "    Warning: Malformed Tf in material " << name << std::endl;
+                 }
+            } else if (token == "Ni") { // Index of Refraction
+                 if (!(ss >> ior)) {
+                      std::cerr << "    Warning: Malformed Ni in material " << name << std::endl;
+                      ior = 1.5f; // Reset to default on error
+                 }
+                 // Clamp IOR to reasonable values if needed
+                 ior = glm::max(1.0f, ior);
+            } else if (token == "Ns") { // Specular Exponent
                  float ns;
-                 ss >> ns;
-                 // Roughness = sqrt(2 / (Ns + 2)) is a common approximation
-                 float roughness = sqrtf(2.0f / (ns + 2.0f));
-                 // TODO: Update currentMaterial->roughness
-                 std::cout << "    Ns: " << ns << " (Roughness approx: " << roughness << ")" << std::endl;
-            } else if (token == "d" && currentMaterial) { // Dissolve (Opacity)
-                 float d;
-                 ss >> d;
-                 // TODO: Handle opacity/transparency if needed
-                 std::cout << "    d: " << d << std::endl;
-            } else if (token == "Tr" && currentMaterial) { // Transparency (alternative to d)
+                 if (!(ss >> ns)) {
+                      std::cerr << "    Warning: Malformed Ns in material " << name << std::endl;
+                      ns = 10.0f; // Default exponent
+                 }
+                 // Convert Ns to roughness (approximation)
+                 roughness = sqrtf(2.0f / (glm::max(2.0f, ns) + 2.0f)); // Clamp Ns >= 2
+                 // roughness = 1.0f - (ns / 1000.0f); // Another simpler approx if Ns range is known
+                 roughness = glm::clamp(roughness, 0.01f, 1.0f); // Clamp roughness
+                 // std::cout << "    Ns: " << ns << " -> Roughness approx: " << roughness << std::endl;
+            } else if (token == "d") { // Dissolve (Opacity)
+                 if (!(ss >> opacity)) {
+                     std::cerr << "    Warning: Malformed d in material " << name << std::endl;
+                     opacity = 1.0f;
+                 }
+                 opacity = glm::clamp(opacity, 0.0f, 1.0f);
+            } else if (token == "Tr") { // Transparency (alternative to d)
                  float tr;
-                 ss >> tr;
-                 // TODO: Handle opacity/transparency if needed (Tr = 1-d)
-                 std::cout << "    Tr: " << tr << std::endl;
-             } else if (token == "illum" && currentMaterial) { // Illumination model
-                  int model;
-                  ss >> model;
-                  // TODO: Set material type based on illumination model (e.g., illum 2 often means standard phong/blinn-phong)
-                  std::cout << "    illum: " << model << std::endl;
-             } else if (token == "map_Kd" && currentMaterial) { // Diffuse texture map
-                 std::string texFile;
-                 std::getline(ss, texFile);
-                 texFile.erase(0, texFile.find_first_not_of(" \t"));
-                  // TODO: Store texture filename in currentMaterial
-                  std::cout << "    map_Kd: " << texFile << std::endl;
+                 if (!(ss >> tr)) {
+                      std::cerr << "    Warning: Malformed Tr in material " << name << std::endl;
+                      tr = 0.0f;
+                 }
+                 opacity = 1.0f - glm::clamp(tr, 0.0f, 1.0f); // Tr = 1 - d
+             } else if (token == "illum") { // Illumination model
+                  if (!(ss >> illumModel)) {
+                     std::cerr << "    Warning: Malformed illum in material " << name << std::endl;
+                     illumModel = 1;
+                  }
+             } else if (token == "map_Kd") { // Diffuse texture map
+                 std::getline(ss >> std::ws, textureFile);
+                 // Prepend basePath if textureFile is not absolute
+                 if (!textureFile.empty() && std::filesystem::path(textureFile).is_relative()) {
+                    textureFile = (std::filesystem::path(basePath) / textureFile).string();
+                 }
+                 std::cout << "    map_Kd: " << textureFile << std::endl;
              }
              // Add handling for other MTL tokens (map_Ks, map_Ke, map_bump, etc.) as needed
-        }
+
+             // Check if end of file or next material is starting
+             std::streampos currentPos = mtlfile.tellg(); // Remember position
+             std::string nextLine;
+             bool nextIsNewMtl = false;
+             if (std::getline(mtlfile, nextLine)) {
+                 std::stringstream next_ss(nextLine);
+                 std::string next_token;
+                 next_ss >> next_token;
+                 if (next_token == "newmtl") {
+                     nextIsNewMtl = true;
+                 }
+                 // Crucially, put the line back or seek back
+                 mtlfile.seekg(currentPos);
+             } else {
+                nextIsNewMtl = true; // Treat EOF as end of current material block
+             }
+
+            // If the next line starts a new material or we are at EOF,
+            // finalize the current material definition
+            if (nextIsNewMtl && !name.empty()) { // Make sure we have a name
+                 // Determine MaterialType based on parsed properties
+                 if (glm::length(emissiveColor) > 0.1f) { // Check if emissive
+                    matType = MaterialType::LIGHT;
+                 } else if (opacity < 0.95f || illumModel == 5 || illumModel == 7 || glm::length(transmissiveColor) > 0.1f) {
+                    // Heuristic for dielectric: transparent, or specific illum models, or has Tf color
+                    matType = MaterialType::DIELECTRIC;
+                    diffuseColor = glm::vec3(1.0f); // Dielectrics often use baseColor=1 and rely on Tf/transmission
+                    if (glm::length(transmissiveColor) > 0.1f) {
+                        // If Tf is set, use it as the base color (filter color)
+                        diffuseColor = transmissiveColor;
+                    }
+                 } else if (illumModel == 3 || (glm::length(specularColor) > 0.1f && diffuseColor.r < 0.1f && diffuseColor.g < 0.1f && diffuseColor.b < 0.1f )) {
+                     // Heuristic for metal: illum 3 (raytrace reflection) or high specularity with low diffuse
+                    matType = MaterialType::METAL;
+                    diffuseColor = specularColor; // Metals use specular color as base color
+                 } else {
+                    matType = MaterialType::DIFFUSE; // Default
+                 }
+
+
+                // Create and add the material
+                 // This requires modifying the Material constructor or adding setters
+                 // Example assuming constructor takes all needed values:
+                currentMaterial = new Material(
+                    name,           // Use parsed name (Need to add name to Material class)
+                    diffuseColor,
+                    specularColor,      // Pass specular color (might be used for metal tint or dielectric reflection)
+                    transmissiveColor,  // Pass transmissive color
+                    emissiveColor,
+                    roughness,
+                    ior,
+                    matType,
+                    textureFile         // Pass texture file (Need to add to Material class/constructor)
+                );
+                m_materials.push_back(currentMaterial);
+                std::cout << "    -> Finalized as Type: " << static_cast<int>(matType) << ", IOR: " << ior << ", Roughness: " << roughness << std::endl;
+
+                // Reset name to prevent adding the same material multiple times if file ends unexpectedly
+                name = "";
+                currentMaterial = nullptr; // Ready for the next 'newmtl'
+            }
+        } // End while loop
 
         mtlfile.close();
-        std::cout << "Finished Parsing Material Library. Found " << m_materials.size() << " materials." << std::endl;
+        std::cout << "Finished Parsing Material Library. Added " << m_materials.size() << " materials." << std::endl;
         return true; // Return true even if empty, indicates file was processed
     }
 

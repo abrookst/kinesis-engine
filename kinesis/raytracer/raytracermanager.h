@@ -56,6 +56,7 @@ namespace Kinesis::RayTracerManager {
     extern ShaderBindingTableEntry rgenSBT; // RayGen SBT entry
     extern ShaderBindingTableEntry missSBT; // Miss SBT entry
     extern ShaderBindingTableEntry chitSBT; // ClosestHit SBT entry
+    extern ShaderBindingTableEntry callableSBT;
     extern RTOutput rtOutput;
     // Potentially add ahitSBT if using AnyHit shaders
 

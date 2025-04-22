@@ -1,9 +1,15 @@
-#version 460
+#version 460 core
 #extension GL_EXT_ray_tracing : require
 
-layout(location = 0) rayPayloadInEXT vec3 hitValue;
+// Minimal Payload
+struct RayPayload {
+    vec3 color;
+};
 
-void main()
-{
-    hitValue = vec3(0.0, 0.1, 0.3);
+// Input payload
+layout(location = 0) rayPayloadInEXT RayPayload payload;
+
+void main() {
+    // Set fixed background color on miss
+    payload.color = vec3(0.1, 0.1, 0.15); // Dark grey/blue
 }

@@ -1,56 +1,68 @@
-#version 460 core
+#version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_scalar_block_layout : require
 
-// Minimal Payload
-struct RayPayload {
-    vec3 color;
-};
+// Payload from Miss/Closest Hit
+layout(location = 0) rayPayloadEXT vec3 hitValue;
 
-// Input/Output layout qualifiers
-layout(location = 0) rayPayloadEXT RayPayload payload;
-
-// Descriptor Set Bindings (Required)
-layout(set = 0, binding = 0) uniform CameraBufferObject {
+// --- Set 0: Global Data ---
+layout(set = 0, binding = 0, std140) uniform CameraBufferObject {
     mat4 projection;
     mat4 view;
     mat4 inverseProjection;
     mat4 inverseView;
-} cameraUbo;
+} cam;
 
+// --- Set 1: Ray Tracing Specific Data ---
 layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
-layout(set = 1, binding = 1, rgba16f) uniform image2D outputImage; // Match format used in C++
+layout(set = 1, binding = 1, rgba16f) uniform image2D outputImage;
+
+// G-Buffer Inputs
+layout(set = 1, binding = 3) uniform sampler2D gbufferPosition;
+layout(set = 1, binding = 4) uniform sampler2D gbufferNormal;
+layout(set = 1, binding = 5) uniform sampler2D gbufferAlbedo;
+layout(set = 1, binding = 6) uniform sampler2D gbufferProperties;
 
 void main() {
-    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 uv = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
-    const vec2 d = uv * 2.0 - 1.0;
+    // Screen coordinates for G-Buffer lookup
+    // *** FIXED: Use uvec2 for launch ID/Size ***
+    uvec2 pixelCoords = gl_LaunchIDEXT.xy;
+    uvec2 size        = gl_LaunchSizeEXT.xy;
+    // *** FIXED: Explicit cast to vec2 for calculation ***
+    vec2 texCoord     = (vec2(pixelCoords) + vec2(0.5)) / vec2(size);
 
-    vec4 origin = cameraUbo.inverseView * vec4(0, 0, 0, 1);
-    vec4 target = cameraUbo.inverseProjection * vec4(d.x, d.y, 1, 1);
-    vec4 direction = cameraUbo.inverseView * vec4(normalize(target.xyz), 0);
+    // Sample G-Buffer
+    vec4 posSample    = texture(gbufferPosition, texCoord);
 
+    // Simple check if the pixel hit anything in the G-Buffer pass
+    if (posSample.a < 0.5) {
+        imageStore(outputImage, ivec2(pixelCoords), vec4(0.0, 0.0, 0.0, 1.0)); // imageStore needs ivec2
+        return;
+    }
+
+    // --- Ray Definition ---
+    vec3 worldPos = posSample.xyz;
+    vec3 rayOrigin = vec3(cam.inverseView[3]);
+    vec3 rayDirection = normalize(worldPos - rayOrigin);
+
+    // --- Ray Tracing ---
     uint rayFlags = gl_RayFlagsOpaqueEXT;
     uint cullMask = 0xFF;
-    float tMin = 0.001;
-    float tMax = 10000.0;
+    float tMin    = 0.01;
+    float tMax    = 100.0;
+    int missIndex = 0;
 
-    // Initialize payload (simple black)
-    payload.color = vec3(0.0, 0.0, 0.0);
-
-    traceRayEXT(
-        topLevelAS,
-        rayFlags,
-        cullMask,
-        0, // sbtRecordOffset
-        0, // sbtRecordStride
-        1, // missIndex (points to the single miss shader record)
-        origin.xyz,
-        tMin,
-        direction.xyz,
-        tMax,
-        0 // payload location
+    traceRayEXT(topLevelAS,
+                rayFlags,
+                cullMask,
+                0,          // SBT record offset for hit group
+                0,          // SBT record stride
+                missIndex,  // Miss index
+                rayOrigin, tMin, rayDirection, tMax,
+                0           // Payload location
     );
 
-    // Write final color from payload to output image
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload.color, 1.0));
+    // Write the result from the payload
+    imageStore(outputImage, ivec2(pixelCoords), vec4(hitValue, 1.0)); // imageStore needs ivec2
 }

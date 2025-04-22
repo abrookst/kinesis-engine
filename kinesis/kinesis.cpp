@@ -752,7 +752,7 @@ namespace Kinesis
 #ifdef __APPLE__
              modelPath = "../../../../../../kinesis/assets/models";
 #endif
-            mod_obj = std::make_shared<Model>(modelPath, "bunny_1k.obj");
+            mod_obj = std::make_shared<Model>(modelPath, "bunny_200.obj");
             mod_obj2 = std::make_shared<Model>(modelPath, "cornell_box.obj");
             // mod_obj = std::make_shared<Model>(modelPath, "smooth_vase.obj");
             // mod_obj = createCubeModel({0.f, 0.f, 0.f}); // Use cube for testing

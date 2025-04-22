@@ -1,15 +1,13 @@
-#version 460 core
+#version 460
 #extension GL_EXT_ray_tracing : require
 
-// Minimal Payload
-struct RayPayload {
-    vec3 color;
-};
+// Payload input from RayGen
+layout(location = 0) rayPayloadInEXT vec3 hitValue;
 
-// Input payload
-layout(location = 0) rayPayloadInEXT RayPayload payload;
+// Optional: Access camera data if needed for sky color calculation
+// layout(set = 0, binding = 0, std140) uniform CameraBufferObject { ... } cam;
 
 void main() {
-    // Set fixed background color on miss
-    payload.color = vec3(0.1, 0.1, 0.15); // Dark grey/blue
+    // Set a background color (e.g., simple blue) when a ray misses everything
+    hitValue = vec3(0.1, 0.2, 0.4);
 }

@@ -1,9 +1,8 @@
-material
-diffuse 0.1 0.1 0.1
-reflective 0.3 0.3 0.3
-transmissive 0.6 0.6 0.6
-index 1.5
-emitted 0.0 0.0 0.0
+# Reference the material library file
+mtllib bunny.mtl
+
+# Apply the dielectric material defined in the MTL file
+usemtl DielectricBunny
 
 v -0.0741957 0.255051 0.00482052
 v -0.128779 0.302833 0.0741941

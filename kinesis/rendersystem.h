@@ -13,7 +13,7 @@ namespace Kinesis
         ~RenderSystem();
 
         VkPipelineLayout pipelineLayout;
-        void renderGameObjects(VkCommandBuffer commandBuffer, const Camera& camera);
+        void renderGameObjects(VkCommandBuffer commandBuffer, const Camera& camera, VkDescriptorSet globalDescriptorSet);
 
         /**
          * @brief Creates the graphics pipeline.
@@ -25,13 +25,6 @@ namespace Kinesis
          */
         void createPipelineLayout();
     };
-
-    struct SimplePushConstantData
-    {
-        glm::mat4 transform{1.f};
-        alignas(16) glm::vec3 color;
-    };
-
 }
 
 #endif

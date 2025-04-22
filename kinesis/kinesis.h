@@ -46,6 +46,10 @@ namespace Kinesis
     extern RenderSystem* mainRenderSystem;
     class GameObject;
     extern std::vector<GameObject> gameObjects;
+    class Buffer;
+    extern std::unique_ptr<Buffer> materialBuffer;
+
+    extern VkDescriptorSetLayout globalSetLayout;
 
     //namespace functions
     bool run();

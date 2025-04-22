@@ -1,0 +1,22 @@
+# Material definition for a dielectric bunny
+
+newmtl DielectricBunny
+# Ambient Color (often matches diffuse)
+Ka 0.0 0.0 0.8
+# Diffuse Color (base surface color - light grey for a clear dielectric)
+Kd 0.0 0.8 0.8
+# Specular Color (reflection color - typically white for dielectrics)
+Ks 1.0 0.0 1.0
+# Transmission Filter (color of light passing through - white for clear)
+# Note: Some renderers might ignore Tf and rely solely on Kd and Ni for dielectrics.
+Tf 1.0 1.0 1.0
+# Emissive Color (set to black as it doesn't emit light)
+Ke 0.0 0.0 0.0
+# Index of Refraction (optical density)
+Ni 1.5
+# Specular Exponent (shininess - high for sharp dielectric reflections)
+Ns 200
+# Dissolve (Opacity - 1.0 is fully opaque. Refraction is handled by Ni and illum)
+d 0.5
+# Illumination Model (5 = Fresnel reflection and refraction, good for dielectrics)
+illum 5

@@ -1,234 +1,416 @@
+#include "mesh.h"
+#include "vertex.h"   // Make sure vertex.h is included
+#include "material.h" // Make sure material.h is included
+
 #include <iostream>
 #include <fstream>
-#include <assert.h>
-#include <string>
-#include <utility>
+#include <sstream>
+#include <filesystem> // For path manipulation
+#include <vector>
+#include <map> // Useful for index lookup during parsing
 
-// #include "argparser.h"
-#include "mesh/vertex.h"
-#include "mesh/boundingbox.h"
-#include "mesh/mesh.h"
-#include "mesh/edge.h"
-#include "mesh/triangle.h"
-#include "mesh/material.h"
-#include "hash.h"
-// #include "ray.h"
-// #include "hit.h"
-// #include "camera.h"
 
 namespace Kinesis::Mesh {
 
-	// =======================================================================
-	// DESTRUCTOR
-	// =======================================================================
+    Mesh::~Mesh() {
+        // Clean up owned materials
+        for (Material* mat : m_materials) {
+            delete mat;
+        }
+        m_materials.clear();
+    }
 
-	Mesh::~Mesh() {
-		unsigned int i;
-		for (i = 0; i < triangles.size(); i++) {
-			Triangle *t = triangles[i];
-			removeTriangleEdges(t);
-			delete t;
-		}
-		for (i = 0; i < materials.size(); i++) { delete materials[i]; }
-		for (i = 0; i < vertices.size(); i++) { delete vertices[i]; }
-		delete bbox;
-	}
+    bool Mesh::Load(const std::string &objFilePath) {
+        m_vertices.clear();
+        m_indices.clear();
+        for (Material* mat : m_materials) { delete mat; } // Clear old materials
+        m_materials.clear();
 
-	// =======================================================================
-	// MODIFIERS:   ADD & REMOVE
-	// =======================================================================
+        std::ifstream objfile(objFilePath);
+        if (!objfile.is_open()) {
+            std::cerr << "ERROR! Cannot open OBJ file: " << objFilePath << std::endl;
+            return false;
+        }
 
-	Vertex* Mesh::addVertex(const glm::vec3 &position) {
-		size_t index = numVertices();
-		vertices.push_back(new Vertex((int)index,position));
-		// extend the bounding box to include this point
-		if (bbox == NULL) 
-			bbox = new BoundingBox(position,position);
-		else 
-			bbox->Extend(position);
-		return vertices[index];
-	}
+        std::cout << "Loading Mesh: " << objFilePath << std::endl;
 
-	void Mesh::addTriangle(Vertex *a, Vertex *b, Vertex *c, Material *material) {
-		// create the face
-		Triangle *t = new Triangle(material);
-		// create the edges
-		Edge *ea = new Edge(a,b,t);
-		Edge *eb = new Edge(b,c,t);
-		Edge *ec = new Edge(c,a,t);
-		// point the face to one of its edges
-		t->setEdge(ea);
-		// connect the edges to each other
-		ea->setNext(eb);
-		eb->setNext(ec);
-		ec->setNext(ea);
-		// verify these edges aren't already in the mesh 
-		// (which would be a bug, or a non-manifold mesh)
-		assert (edges.find(std::make_pair(a,b)) == edges.end());
-		assert (edges.find(std::make_pair(b,c)) == edges.end());
-		assert (edges.find(std::make_pair(c,a)) == edges.end());
-		// add the edges to the master list
-		edges[std::make_pair(a,b)] = ea;
-		edges[std::make_pair(b,c)] = eb;
-		edges[std::make_pair(c,a)] = ec;
-		// connect up with opposite edges (if they exist)
-		edgeshashtype::iterator ea_op = edges.find(std::make_pair(b,a)); 
-		edgeshashtype::iterator eb_op = edges.find(std::make_pair(c,b)); 
-		edgeshashtype::iterator ec_op = edges.find(std::make_pair(a,c)); 
-		if (ea_op != edges.end()) { ea_op->second->setOpposite(ea); }
-		if (eb_op != edges.end()) { eb_op->second->setOpposite(eb); }
-		if (ec_op != edges.end()) { ec_op->second->setOpposite(ec); }
+        std::filesystem::path objPath(objFilePath);
+        std::string basePath = objPath.parent_path().string();
 
-		triangles.push_back(t);
+        std::vector<glm::vec3> temp_positions;
+        std::vector<glm::vec2> temp_texCoords;
+        std::vector<glm::vec3> temp_normals;
 
-		// if it's a light, add it to that list too
-		//if ((material->getEmittedColor()).Length() > 0) {
-		//	triangles.push_back(t);
-		//}
-	}
+        std::string line;
+        Material* currentMaterial = nullptr; // Track the active material
 
-	void Mesh::removeTriangleEdges(Triangle *t) {
-		// helper function for face deletion
-		Edge *ea = t->getEdge();
-		Edge *eb = ea->getNext();
-		Edge *ec = eb->getNext();
-		assert (ec->getNext() == ea);
-		Vertex *a = ea->getStartVertex();
-		Vertex *b = eb->getStartVertex();
-		Vertex *c = ec->getStartVertex();
-		// remove elements from master lists
-		edges.erase(std::make_pair(a,b)); 
-		edges.erase(std::make_pair(b,c)); 
-		edges.erase(std::make_pair(c,a)); 
-		// clean up memory
-		delete ea;
-		delete eb;
-		delete ec;
-	}
+        // Simple map to reuse vertices based on v/vt/vn combo
+        std::map<std::string, uint32_t> vertex_map;
 
-	std::vector<Vertex> Mesh::getFaceVertices() { 
-		std::vector<Vertex> verticesCopy;
-		for (int i = 0; i < triangles.size(); i++) {
-			verticesCopy.push_back(*(*triangles[i])[0]);
-			verticesCopy.push_back(*(*triangles[i])[1]);
-			verticesCopy.push_back(*(*triangles[i])[2]);
-		}
-		return verticesCopy;
-	}
-	// ==============================================================================
-	// EDGE HELPER FUNCTIONS
+        while (std::getline(objfile, line)) {
+            std::stringstream ss(line);
+            std::string token;
+            ss >> token;
 
-	Edge* Mesh::getEdge(Vertex *a, Vertex *b) const {
-		edgeshashtype::const_iterator iter = edges.find(std::make_pair(a,b));
-		if (iter == edges.end()) return NULL;
-		return iter->second;
-	}
+            if (token == "v") {
+                glm::vec3 pos;
+                ss >> pos.x >> pos.y >> pos.z;
+                temp_positions.push_back(pos);
+            } else if (token == "vt") {
+                glm::vec2 uv;
+                ss >> uv.x >> uv.y;
+                 // Optional: Flip V coordinate if needed (common difference between formats)
+                 // uv.y = 1.0f - uv.y;
+                temp_texCoords.push_back(uv);
+            } else if (token == "vn") {
+                glm::vec3 norm;
+                ss >> norm.x >> norm.y >> norm.z;
+                temp_normals.push_back(norm);
+            } else if (token == "f") {
+                // Process face (assuming triangles v/vt/vn)
+                // TODO: Handle polygons with more than 3 vertices (triangulate)
+                std::string v1_token, v2_token, v3_token, extra_token;
+                ss >> v1_token >> v2_token >> v3_token >> extra_token; // Read potential 4th vertex
 
-	Vertex* Mesh::getChildVertex(Vertex *p1, Vertex *p2) const {
-		vphashtype::const_iterator iter = vertex_parents.find(std::make_pair(p1,p2)); 
-		if (iter == vertex_parents.end()) return NULL;
-		return iter->second; 
-	}
+                 if (!extra_token.empty()) {
+                     // Basic triangulation: Assume convex quad and split 0-1-2, 0-2-3
+                     // More robust triangulation might be needed for complex polygons
+                     std::cerr << "Warning: Face with more than 3 vertices encountered near line: '" << line << "'. Performing basic triangulation." << std::endl;
+                     std::vector<std::string> face_tokens = {v1_token, v2_token, v3_token, extra_token};
+                      // First triangle (0, 1, 2)
+                      for (int i = 0; i < 3; ++i) {
+                           // Process face_tokens[i] (same logic as below)
+                           if (vertex_map.count(face_tokens[i])) { m_indices.push_back(vertex_map[face_tokens[i]]); }
+                            else { /* Create new vertex and add index */
+                                std::stringstream face_ss(face_tokens[i]); std::string segment; std::vector<int> indices;
+                                while (std::getline(face_ss, segment, '/')) { indices.push_back(segment.empty() ? 0 : std::stoi(segment)); }
+                                int v_idx = (indices.size() > 0 && indices[0] > 0) ? indices[0] - 1 : -1;
+                                int vt_idx = (indices.size() > 1 && indices[1] > 0) ? indices[1] - 1 : -1;
+                                int vn_idx = (indices.size() > 2 && indices[2] > 0) ? indices[2] - 1 : -1;
+                                glm::vec3 pos = (v_idx >= 0 && v_idx < temp_positions.size()) ? temp_positions[v_idx] : glm::vec3(0.0f);
+                                glm::vec2 uv = (vt_idx >= 0 && vt_idx < temp_texCoords.size()) ? temp_texCoords[vt_idx] : glm::vec2(0.0f);
+                                glm::vec3 norm = (vn_idx >= 0 && vn_idx < temp_normals.size()) ? temp_normals[vn_idx] : glm::vec3(0.0f, 1.0f, 0.0f);
+                                glm::vec3 color = glm::vec3(1.0f);
+                                uint32_t new_index = static_cast<uint32_t>(m_vertices.size());
+                                m_vertices.emplace_back(new_index, pos, color, norm, uv);
+                                m_indices.push_back(new_index); vertex_map[face_tokens[i]] = new_index;
+                            }
+                       }
+                        // Second triangle (0, 2, 3)
+                       std::vector<int> triangle2_indices = {0, 2, 3};
+                       for (int i_idx : triangle2_indices) {
+                           // Process face_tokens[i_idx] (same logic as above)
+                           if (vertex_map.count(face_tokens[i_idx])) { m_indices.push_back(vertex_map[face_tokens[i_idx]]); }
+                           else { /* Create new vertex and add index */
+                                std::stringstream face_ss(face_tokens[i_idx]); std::string segment; std::vector<int> indices;
+                                while (std::getline(face_ss, segment, '/')) { indices.push_back(segment.empty() ? 0 : std::stoi(segment)); }
+                                int v_idx = (indices.size() > 0 && indices[0] > 0) ? indices[0] - 1 : -1;
+                                int vt_idx = (indices.size() > 1 && indices[1] > 0) ? indices[1] - 1 : -1;
+                                int vn_idx = (indices.size() > 2 && indices[2] > 0) ? indices[2] - 1 : -1;
+                                glm::vec3 pos = (v_idx >= 0 && v_idx < temp_positions.size()) ? temp_positions[v_idx] : glm::vec3(0.0f);
+                                glm::vec2 uv = (vt_idx >= 0 && vt_idx < temp_texCoords.size()) ? temp_texCoords[vt_idx] : glm::vec2(0.0f);
+                                glm::vec3 norm = (vn_idx >= 0 && vn_idx < temp_normals.size()) ? temp_normals[vn_idx] : glm::vec3(0.0f, 1.0f, 0.0f);
+                                glm::vec3 color = glm::vec3(1.0f);
+                                uint32_t new_index = static_cast<uint32_t>(m_vertices.size());
+                                m_vertices.emplace_back(new_index, pos, color, norm, uv);
+                                m_indices.push_back(new_index); vertex_map[face_tokens[i_idx]] = new_index;
+                            }
+                       }
 
-	void Mesh::setParentsChild(Vertex *p1, Vertex *p2, Vertex *child) {
-		assert (vertex_parents.find(std::make_pair(p1,p2)) == vertex_parents.end());
-		vertex_parents[std::make_pair(p1,p2)] = child; 
-	}
+                 } else {
+                      // Process triangle face_tokens = {v1_token, v2_token, v3_token}
+                      std::vector<std::string> face_tokens = {v1_token, v2_token, v3_token};
+                      for (const std::string& face_token : face_tokens) {
+                          // --- Vertex Deduplication ---
+                          if (vertex_map.count(face_token)) {
+                              m_indices.push_back(vertex_map[face_token]);
+                          } else {
+                              // Create a new vertex
+                              std::stringstream face_ss(face_token);
+                              std::string segment;
+                              std::vector<int> indices; // Stores v, vt, vn indices (1-based)
 
-	//
-	// ===============================================================================
-	// the load function parses our (non-standard) extension of very simple .obj files
-	// ===============================================================================
+                              while (std::getline(face_ss, segment, '/')) {
+                                  if (!segment.empty()) {
+                                      indices.push_back(std::stoi(segment));
+                                  } else {
+                                       indices.push_back(0); // Handle cases like "v//vn"
+                                  }
+                              }
 
-	void Mesh::Load(const std::string &path, const std::string& input_file) {
+                              // Get data from temp arrays using 1-based indices from OBJ
+                              int v_idx = (indices.size() > 0 && indices[0] > 0) ? indices[0] - 1 : -1;
+                              int vt_idx = (indices.size() > 1 && indices[1] > 0) ? indices[1] - 1 : -1;
+                              int vn_idx = (indices.size() > 2 && indices[2] > 0) ? indices[2] - 1 : -1;
 
-		std::string file = path+'/'+input_file;
+                              glm::vec3 pos = (v_idx >= 0 && v_idx < temp_positions.size()) ? temp_positions[v_idx] : glm::vec3(0.0f);
+                              glm::vec2 uv = (vt_idx >= 0 && vt_idx < temp_texCoords.size()) ? temp_texCoords[vt_idx] : glm::vec2(0.0f);
+                              glm::vec3 norm = (vn_idx >= 0 && vn_idx < temp_normals.size()) ? temp_normals[vn_idx] : glm::vec3(0.0f, 1.0f, 0.0f); // Default normal if missing
 
-		std::ifstream objfile(file.c_str());
-		if (!objfile.good()) {
-			std::cout << "ERROR! CANNOT OPEN " << file << std::endl;
-			return;
-		}
+                              // Assign a default color or color based on material later
+                              glm::vec3 color = glm::vec3(1.0f, 0.f, 0.f); // debugi red
 
-		std::string token;
-		Material *active_material = NULL;
-		background_color = glm::vec3(1,1,1);
+                              // Assign an index for the new vertex
+                              uint32_t new_index = static_cast<uint32_t>(m_vertices.size());
+                              m_vertices.emplace_back(new_index, pos, color, norm, uv); // Use the Vertex constructor
+                              m_indices.push_back(new_index);
+                              vertex_map[face_token] = new_index;
+                          }
+                      } // end for face_token
+                 } // end else (triangle face)
 
-		while (objfile >> token) {
-			if (token == "v") {
-				float x,y,z;
-				objfile >> x >> y >> z;
-				addVertex(glm::vec3(x,y,z));
-			} else if (token == "vt") {
-				assert (numVertices() >= 1);
-				float s,t;
-				objfile >> s >> t;
-				getVertex((int)numVertices()-1)->setTextureCoordinates(s,t);
-			} else if (token == "f") {
-				int a,b,c;
-				objfile >> a >> b >> c;
-				a--;
-				b--;
-				c--;
-				assert (a >= 0 && a < numVertices());
-				assert (b >= 0 && b < numVertices());
-				assert (c >= 0 && c < numVertices());
-				assert (active_material != NULL);
-				addTriangle(getVertex(a),getVertex(b),getVertex(c),active_material);
-			} else if (token == "background_color") {
-				float r,g,b;
-				objfile >> r >> g >> b;
-				background_color = glm::vec3(r,g,b);
-			} else if (token == "m") {
-				// this is not standard .obj format!!
-				// materials
-				int m;
-				objfile >> m;
-				assert (m >= 0 && m < (int)materials.size());
-				active_material = materials[m];
-			} else if (token == "material") {
-				// this is not standard .obj format!!
-				std::string texture_file = "";
-				glm::vec3 diffuse(0,0,0);
-				float r,g,b;
-				objfile >> token;
-				if (token == "diffuse") {
-					objfile >> r >> g >> b;
-					diffuse = glm::vec3(r,g,b);
-				} else {
-					assert (token == "texture_file");
-					objfile >> texture_file;
-					// prepend the directory name
-					texture_file = path+'/'+texture_file;
-				}
-				glm::vec3 reflective,transmissive,emitted;
-				objfile >> token >> r >> g >> b;
-				assert (token == "reflective");
-				reflective = glm::vec3(r,g,b);
-				float roughness = 0;
-				objfile >> token;
-				if (token == "roughness") {
-					objfile >> roughness;
-					objfile >> token;
-				}
-				double indexOfRefraction = 1;
-				if (token == "transmissive") {
-					objfile >> r >> g >> b >> token;
-					transmissive = glm::vec3(r,g,b);
-					if (token == "index") {
-						objfile >> indexOfRefraction >> token;
-					}
-				}
-				assert (token == "emitted");
-				objfile >> r >> g >> b;
-				emitted = glm::vec3(r,g,b);
-				materials.push_back(new Kinesis::Mesh::Material(texture_file,diffuse,reflective,transmissive,emitted,roughness,indexOfRefraction));
-			} else {
-				std::cout << "UNKNOWN TOKEN " << token << std::endl;
-				exit(0);
-			}
-		}
-		std::cout << " mesh loaded: " << numTriangles() << " triangles and " << numEdges() << " edges." << std::endl;
-	}
-}
+            } else if (token == "mtllib") {
+                 std::string mtlFileName;
+                 // Handle potential spaces in filename if the rest of the line is the filename
+                 std::getline(ss, mtlFileName);
+                 // Trim leading whitespace if any from getline
+                  mtlFileName.erase(0, mtlFileName.find_first_not_of(" \t"));
 
+                 if (!mtlFileName.empty()) {
+                     std::string mtlFilePath = basePath.empty() ? mtlFileName : basePath + "/" + mtlFileName; // Combine paths
+                     std::cout << "  Found Material Library: " << mtlFilePath << std::endl;
+                     // TODO: Implement MTL parsing function call here
+                     parseMtl(mtlFilePath, basePath);
+                     // For now, create a placeholder default material
+                 } else {
+                      std::cerr << "Warning: mtllib token found but no filename specified." << std::endl;
+                 }
+
+
+            } else if (token == "usemtl") {
+                std::string materialName;
+                 // Handle potential spaces in material name
+                 std::getline(ss, materialName);
+                 materialName.erase(0, materialName.find_first_not_of(" \t"));
+
+                if (!materialName.empty()){
+                    // TODO: Find the loaded material by name and set currentMaterial
+                    // For now, just use the first material if available
+                    if (!m_materials.empty()) {
+                        currentMaterial = m_materials[0]; // Assign the current material
+                    } else {
+                         // Create default material if none loaded yet
+                          m_materials.push_back(new Material("", {0.8f, 0.8f, 0.8f}, glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f), 0.5f, 1.5f, MaterialType::DIFFUSE));
+                          currentMaterial = m_materials[0];
+                          std::cout << "  No materials loaded, creating default for: " << materialName << std::endl;
+                    }
+                    std::cout << "  Using material (placeholder assignment): " << materialName << std::endl;
+                 } else {
+                     std::cerr << "Warning: usemtl token found but no material name specified." << std::endl;
+                 }
+            }
+             // Handle other tokens like 's', 'g', 'o', comments '#' etc. if needed
+        }
+
+        objfile.close();
+
+        if (m_vertices.empty()) {
+            std::cerr << "Warning: No vertices loaded from " << objFilePath << std::endl;
+            // Return true because the file was opened, but signal empty mesh?
+            // Or return false if an empty mesh is an error.
+            return true; // Let's allow empty meshes for now
+        }
+         if (m_indices.empty()) {
+             std::cerr << "Warning: No indices loaded from " << objFilePath << "." << std::endl;
+             // Don't automatically generate indices if faces weren't defined.
+             // If vertices exist but indices don't, it might be a point cloud or line list.
+         }
+
+
+        std::cout << "  Loaded " << m_vertices.size() << " vertices and " << m_indices.size() << " indices." << std::endl;
+        return true;
+    }
+
+    bool Mesh::parseMtl(const std::string& mtlFilePath, const std::string& basePath) { // Keep basePath if needed for textures
+        std::ifstream mtlfile(mtlFilePath);
+        if (!mtlfile.is_open()) {
+            std::cerr << "ERROR! Cannot open MTL file: " << mtlFilePath << std::endl;
+            return false;
+        }
+
+        std::cout << "Parsing Material Library: " << mtlFilePath << std::endl;
+
+        Material* currentMaterial = nullptr;
+        std::string line;
+
+        // Default values for a new material
+        std::string name = "default";
+        glm::vec3 diffuseColor(0.8f);
+        glm::vec3 specularColor(0.0f); // Ks
+        glm::vec3 transmissiveColor(0.0f); // Tf (often used for transmission filter)
+        glm::vec3 emissiveColor(0.0f); // Ke
+        float roughness = 0.8f; // Derived from Ns later
+        float ior = 1.5f; // Ni - default glass IOR
+        float opacity = 1.0f; // d
+        int illumModel = 1; // Default illum
+        std::string textureFile = "";
+        MaterialType matType = MaterialType::DIFFUSE; // Default type
+
+        while (std::getline(mtlfile, line)) {
+            // Trim whitespace
+            line.erase(0, line.find_first_not_of(" \t\r\n"));
+            line.erase(line.find_last_not_of(" \t\r\n") + 1);
+            if (line.empty() || line[0] == '#') continue;
+
+            std::stringstream ss(line);
+            std::string token;
+            ss >> token;
+
+            if (token == "newmtl") {
+                // If we were defining a previous material, finalize and add it
+                if (currentMaterial) {
+                    // Update properties based on parsed values BEFORE creating the new one
+                     // Note: Material constructor needs updating or setters are needed
+                     // This example assumes we create the material *after* parsing its block
+                }
+
+                 // Reset defaults for the new material
+                 ss >> std::ws >> name; // Read name
+                 diffuseColor = glm::vec3(0.8f);
+                 specularColor = glm::vec3(0.0f);
+                 transmissiveColor = glm::vec3(0.0f);
+                 emissiveColor = glm::vec3(0.0f);
+                 roughness = 0.8f;
+                 ior = 1.5f;
+                 opacity = 1.0f;
+                 illumModel = 1;
+                 textureFile = "";
+                 matType = MaterialType::DIFFUSE;
+
+                 // Create a placeholder - we'll configure it as we parse
+                 // Or, better: store parsed values and create the Material object at the END
+                 // of the file or before the next "newmtl"
+                 std::cout << "  Defining material: " << name << std::endl;
+
+
+            } else if (token == "Kd") { // Diffuse color
+                 if (!(ss >> diffuseColor.x >> diffuseColor.y >> diffuseColor.z)) {
+                      std::cerr << "    Warning: Malformed Kd in material " << name << std::endl;
+                 }
+            } else if (token == "Ks") { // Specular color (can indicate metalness or just specularity)
+                 if (!(ss >> specularColor.x >> specularColor.y >> specularColor.z)) {
+                     std::cerr << "    Warning: Malformed Ks in material " << name << std::endl;
+                 }
+            } else if (token == "Ke") { // Emissive color
+                 if (!(ss >> emissiveColor.x >> emissiveColor.y >> emissiveColor.z)) {
+                      std::cerr << "    Warning: Malformed Ke in material " << name << std::endl;
+                 }
+            } else if (token == "Tf") { // Transmission Filter (often indicates dielectric color)
+                 if (!(ss >> transmissiveColor.x >> transmissiveColor.y >> transmissiveColor.z)) {
+                     std::cerr << "    Warning: Malformed Tf in material " << name << std::endl;
+                 }
+            } else if (token == "Ni") { // Index of Refraction
+                 if (!(ss >> ior)) {
+                      std::cerr << "    Warning: Malformed Ni in material " << name << std::endl;
+                      ior = 1.5f; // Reset to default on error
+                 }
+                 // Clamp IOR to reasonable values if needed
+                 ior = glm::max(1.0f, ior);
+            } else if (token == "Ns") { // Specular Exponent
+                 float ns;
+                 if (!(ss >> ns)) {
+                      std::cerr << "    Warning: Malformed Ns in material " << name << std::endl;
+                      ns = 10.0f; // Default exponent
+                 }
+                 // Convert Ns to roughness (approximation)
+                 roughness = sqrtf(2.0f / (glm::max(2.0f, ns) + 2.0f)); // Clamp Ns >= 2
+                 // roughness = 1.0f - (ns / 1000.0f); // Another simpler approx if Ns range is known
+                 roughness = glm::clamp(roughness, 0.01f, 1.0f); // Clamp roughness
+                 // std::cout << "    Ns: " << ns << " -> Roughness approx: " << roughness << std::endl;
+            } else if (token == "d") { // Dissolve (Opacity)
+                 if (!(ss >> opacity)) {
+                     std::cerr << "    Warning: Malformed d in material " << name << std::endl;
+                     opacity = 1.0f;
+                 }
+                 opacity = glm::clamp(opacity, 0.0f, 1.0f);
+            } else if (token == "Tr") { // Transparency (alternative to d)
+                 float tr;
+                 if (!(ss >> tr)) {
+                      std::cerr << "    Warning: Malformed Tr in material " << name << std::endl;
+                      tr = 0.0f;
+                 }
+                 opacity = 1.0f - glm::clamp(tr, 0.0f, 1.0f); // Tr = 1 - d
+             } else if (token == "illum") { // Illumination model
+                  if (!(ss >> illumModel)) {
+                     std::cerr << "    Warning: Malformed illum in material " << name << std::endl;
+                     illumModel = 1;
+                  }
+             } else if (token == "map_Kd") { // Diffuse texture map
+                 std::getline(ss >> std::ws, textureFile);
+                 // Prepend basePath if textureFile is not absolute
+                 if (!textureFile.empty() && std::filesystem::path(textureFile).is_relative()) {
+                    textureFile = (std::filesystem::path(basePath) / textureFile).string();
+                 }
+                 std::cout << "    map_Kd: " << textureFile << std::endl;
+             }
+             // Add handling for other MTL tokens (map_Ks, map_Ke, map_bump, etc.) as needed
+
+             // Check if end of file or next material is starting
+             std::streampos currentPos = mtlfile.tellg(); // Remember position
+             std::string nextLine;
+             bool nextIsNewMtl = false;
+             if (std::getline(mtlfile, nextLine)) {
+                 std::stringstream next_ss(nextLine);
+                 std::string next_token;
+                 next_ss >> next_token;
+                 if (next_token == "newmtl") {
+                     nextIsNewMtl = true;
+                 }
+                 // Crucially, put the line back or seek back
+                 mtlfile.seekg(currentPos);
+             } else {
+                nextIsNewMtl = true; // Treat EOF as end of current material block
+             }
+
+            // If the next line starts a new material or we are at EOF,
+            // finalize the current material definition
+            if (nextIsNewMtl && !name.empty()) { // Make sure we have a name
+                 // Determine MaterialType based on parsed properties
+                 if (glm::length(emissiveColor) > 0.1f) { // Check if emissive
+                    matType = MaterialType::LIGHT;
+                 } else if (opacity < 0.95f || illumModel == 5 || illumModel == 7 || glm::length(transmissiveColor) > 0.1f) {
+                    // Heuristic for dielectric: transparent, or specific illum models, or has Tf color
+                    matType = MaterialType::DIELECTRIC;
+                    diffuseColor = glm::vec3(1.0f); // Dielectrics often use baseColor=1 and rely on Tf/transmission
+                    if (glm::length(transmissiveColor) > 0.1f) {
+                        // If Tf is set, use it as the base color (filter color)
+                        diffuseColor = transmissiveColor;
+                    }
+                 } else if (illumModel == 3 || (glm::length(specularColor) > 0.1f && diffuseColor.r < 0.1f && diffuseColor.g < 0.1f && diffuseColor.b < 0.1f )) {
+                     // Heuristic for metal: illum 3 (raytrace reflection) or high specularity with low diffuse
+                    matType = MaterialType::METAL;
+                    diffuseColor = specularColor; // Metals use specular color as base color
+                 } else {
+                    matType = MaterialType::DIFFUSE; // Default
+                 }
+
+
+                // Create and add the material
+                 // This requires modifying the Material constructor or adding setters
+                 // Example assuming constructor takes all needed values:
+                currentMaterial = new Material(
+                    name,           // Use parsed name (Need to add name to Material class)
+                    diffuseColor,
+                    specularColor,      // Pass specular color (might be used for metal tint or dielectric reflection)
+                    transmissiveColor,  // Pass transmissive color
+                    emissiveColor,
+                    roughness,
+                    ior,
+                    matType,
+                    textureFile         // Pass texture file (Need to add to Material class/constructor)
+                );
+                m_materials.push_back(currentMaterial);
+                std::cout << "    -> Finalized as Type: " << static_cast<int>(matType) << ", IOR: " << ior << ", Roughness: " << roughness << std::endl;
+
+                // Reset name to prevent adding the same material multiple times if file ends unexpectedly
+                name = "";
+                currentMaterial = nullptr; // Ready for the next 'newmtl'
+            }
+        } // End while loop
+
+        mtlfile.close();
+        std::cout << "Finished Parsing Material Library. Added " << m_materials.size() << " materials." << std::endl;
+        return true; // Return true even if empty, indicates file was processed
+    }
+
+} // namespace Kinesis::Mesh

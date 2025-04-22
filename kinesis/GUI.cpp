@@ -1,4 +1,5 @@
 #include "GUI.h"
+#include <iostream>
 
 namespace Kinesis::GUI
 {
@@ -10,6 +11,7 @@ namespace Kinesis::GUI
     bool show_toolbar = true;
     bool dark_mode = true;
     bool raytracing_available = false;
+    bool enable_raytracing_pass = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
 
     void HelpMarker(const char *desc)
@@ -38,20 +40,25 @@ namespace Kinesis::GUI
             }
             if (ImGui::BeginMenu("Options"))
             {
-                if (ImGui::BeginMenu("ImGui"))
+                // Conditionally add the raytracing toggle
+                if (Kinesis::GUI::raytracing_available) // <<< ADD CHECK
                 {
-                    ImGui::MenuItem("Show ImGui Demo", "", &show_demo);
-                    ImGui::MenuItem("Dark Mode", "", &dark_mode);
-                    ImGui::EndMenu();
+                    // Use a MenuItem with a checkmark, controlled by enable_raytracing_pass
+                    if (ImGui::BeginMenu("Raytracing")) // Renamed for clarity
+                    {
+                        ImGui::MenuItem("Enable Raytracing Pass", nullptr, &enable_raytracing_pass); // <<< ADD THIS LINE
+                        ImGui::EndMenu();
+                    }
                 }
-                ImGui::EndMenu();
 
-                if (ImGui::BeginMenu("ImGui"))
+                // Existing ImGui Options Submenu
+                if (ImGui::BeginMenu("ImGui Style")) // Renamed for clarity
                 {
                     ImGui::MenuItem("Show ImGui Demo", "", &show_demo);
                     ImGui::MenuItem("Dark Mode", "", &dark_mode);
                     ImGui::EndMenu();
                 }
+                // Removed duplicate ImGui menu entry
                 ImGui::EndMenu();
             }
             ImGui::EndMainMenuBar();
@@ -99,6 +106,7 @@ namespace Kinesis::GUI
         show_toolbar = true;
         dark_mode = true;
         clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
+        enable_raytracing_pass = false;
     }
 
     void update_imgui()

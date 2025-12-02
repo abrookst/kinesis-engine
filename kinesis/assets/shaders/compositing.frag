@@ -19,9 +19,11 @@ layout(push_constant) uniform PushData {
 } pushConstants;
 
 void main() {
-    // Use gl_FragCoord for fullscreen pass, assuming origin is bottom-left.
-    // If origin is top-left, you might need to adjust Y.
+    // Use gl_FragCoord for fullscreen pass
+    // gl_FragCoord has origin at bottom-left with Y increasing upward
+    // We need to flip Y to match texture coordinates (top-left origin)
     ivec2 texelCoord = ivec2(gl_FragCoord.xy);
+    texelCoord.y = textureSize(gbuffer_albedo, 0).y - texelCoord.y - 1;  // Flip Y
 
     // Sample required G-Buffer components
     vec4 albedoColor = texelFetch(gbuffer_albedo, texelCoord, 0);

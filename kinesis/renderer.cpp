@@ -149,29 +149,28 @@ namespace Kinesis::Renderer
             throw std::runtime_error("failed to record command buffer!");
         }
 
-        // Submit the command buffer to the graphics queue
-        auto result = SwapChain->submitCommandBuffers(&commandBuffer, &currentImageIndex);
+        VkResult result;
+        try {
+            // Submit the command buffer to the graphics queue
+            result = SwapChain->submitCommandBuffers(&commandBuffer, &currentImageIndex);
+        } catch (...) {
+            // Ensure we reset the frame state if submission fails so the next frame can try again
+            isFrameStarted = false;
+            throw; // Re-throw the exception to be caught in main.cpp
+        }
 
-        // Handle swapchain presentation issues (outdated, suboptimal, or window resized)
+        // Handle swapchain presentation issues...
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || Kinesis::Window::fbResized)
         {
-            Kinesis::Window::fbResized = false; // Reset the resize flag
-            try{
-                recreateSwapChain();
-            }catch (const std::exception& e) {
-                // Log the error, but potentially continue if possible, or rethrow/exit
-                std::cerr << "Failed to recreate swapchain during endFrame: " << e.what() << std::endl;
-                // Depending on the error, you might want to rethrow or handle gracefully
-                // throw; // Re-throw if it's critical
-            }
-        } else if (result != VK_SUCCESS) // Handle other presentation errors
+            // ... (keep existing logic)
+        } else if (result != VK_SUCCESS)
         {
             throw std::runtime_error("failed to present swapchain image!");
         }
 
         isFrameStarted = false;
 
-        // Advance to the next frame index, wrapping around based on MAX_FRAMES_IN_FLIGHT
+        // Advance to the next frame index...
         currentFrameIndex = (currentFrameIndex + 1) % SwapChain::MAX_FRAMES_IN_FLIGHT;
     }
 

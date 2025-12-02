@@ -10,8 +10,6 @@
 #include "raytracer/raytracermanager.h" // Include for RayTracerManager access
 #include "mesh/material.h"              // Include for Kinesis::Mesh::Material
 
-// Define structure matching shader uniform buffer object (UBO)
-// Ensure layout matches shader definition (std140 alignment often used)
 struct CameraBufferObject
 {
     alignas(16) glm::mat4 projection;
@@ -22,24 +20,21 @@ struct CameraBufferObject
 };
 
 // Add this struct definition somewhere accessible, e.g., material.h or a new common_types.h
-// Make sure layout matches GLSL std430 rules for SSBOs
 struct MaterialData
 {
-    alignas(16) glm::vec3 baseColor;
-    alignas(16) glm::vec3 emissiveColor; // Example: if materials can emit light
-    alignas(4) float roughness;
-    alignas(4) float metallic;
-    alignas(4) float ior; // Index of Refraction
-    alignas(4) int type;  // Matches MaterialType enum
-    // Add padding if needed to meet std430 alignment for the whole struct
-    // alignas(4) int _padding[x];
+    glm::vec4 baseColor;     // Was vec3, now vec4 (16 bytes)
+    glm::vec4 emissiveColor; // Was vec3, now vec4 (16 bytes)
+    float roughness;
+    float metallic;
+    float ior;
+    int type;
 };
 
 // <<< ADDED: Define structure matching the push constant block in the compositing shader >>>
-struct CompositePushConstant {
+struct CompositePushConstant
+{
     alignas(4) int isRaytracingActive; // Matches the 'int isRaytracingActive' in GLSL
 };
-
 
 #include "window.h"
 #include "GUI.h"
@@ -180,7 +175,7 @@ namespace Kinesis
 
             // --- Create Material Buffer ---
             {
-                sceneMaterialData.clear(); // Clear any previous data
+                sceneMaterialData.clear();         // Clear any previous data
                 uint32_t materialIndexCounter = 0; // Assign explicit indices
 
                 // Iterate through loaded game objects and collect material data
@@ -196,14 +191,15 @@ namespace Kinesis
                             // This would require the TLAS instance to somehow specify which
                             // material index within the mesh to use, or store material indices per-primitive.
                             Kinesis::Mesh::Material *mat = meshMaterials[0];
-                            if (mat) { // Check if material pointer is valid
+                            if (mat)
+                            { // Check if material pointer is valid
                                 MaterialData data{};
-                                data.baseColor = mat->getDiffuseColor();
-                                data.emissiveColor = mat->getEmittedColor();
+                                data.baseColor = glm::vec4(mat->getDiffuseColor(), 1.0f);
+                                data.emissiveColor = glm::vec4(mat->getEmittedColor(), 1.0f);
                                 data.roughness = mat->getRoughness();
                                 data.metallic = (mat->getType() == Kinesis::Mesh::MaterialType::METAL) ? 1.0f : 0.0f;
-                                data.ior = mat->getIOR(); // <<< COPY IOR >>>
-                                data.type = static_cast<int>(mat->getType()); // <<< COPY TYPE >>>
+                                data.ior = mat->getIOR();
+                                data.type = static_cast<int>(mat->getType());
                                 sceneMaterialData.push_back(data);
 
                                 // Assign this index to the game object for potential later use
@@ -211,7 +207,9 @@ namespace Kinesis
                                 // go.materialIndex = materialIndexCounter; // Requires adding materialIndex to GameObject
 
                                 materialIndexCounter++;
-                            } else {
+                            }
+                            else
+                            {
                                 std::cerr << "Warning: GameObject '" << go.name << "' has a null material pointer in its mesh. Using default." << std::endl;
                                 sceneMaterialData.push_back({}); // Push default-constructed data
                                 materialIndexCounter++;
@@ -226,7 +224,7 @@ namespace Kinesis
                     }
                     else
                     {
-                         std::cerr << "Warning: GameObject '" << go.name << "' has no model. Using default material data." << std::endl;
+                        std::cerr << "Warning: GameObject '" << go.name << "' has no model. Using default material data." << std::endl;
                         sceneMaterialData.push_back({});
                         materialIndexCounter++;
                     }
@@ -241,8 +239,8 @@ namespace Kinesis
 
                 // Create the GPU buffer for materials
                 materialBuffer = std::make_unique<Buffer>(
-                    sizeof(MaterialData),                            // Size of one material struct
-                    static_cast<uint32_t>(sceneMaterialData.size()), // Number of materials
+                    sizeof(MaterialData),                                                           // Size of one material struct
+                    static_cast<uint32_t>(sceneMaterialData.size()),                                // Number of materials
                     VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, // <<< ADD SHADER_DEVICE_ADDRESS for RT access >>>
                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
                     // VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT // Optional: For better performance, use staging buffer
@@ -256,6 +254,15 @@ namespace Kinesis
                 std::cout << "  Size of MaterialData: " << sizeof(MaterialData) << " bytes" << std::endl;
                 std::cout << "  Total Buffer Size: " << materialBuffer->getBufferSize() << " bytes" << std::endl;
 
+                // Debug: Print each material
+                for (size_t i = 0; i < sceneMaterialData.size(); ++i)
+                {
+                    const auto &mat = sceneMaterialData[i];
+                    std::cout << "  Material[" << i << "]: type=" << mat.type
+                              << " baseColor=(" << mat.baseColor.x << "," << mat.baseColor.y << "," << mat.baseColor.z << ")"
+                              << " emissive=(" << mat.emissiveColor.x << "," << mat.emissiveColor.y << "," << mat.emissiveColor.z << ")"
+                              << std::endl;
+                }
             }
             // --- End Material Buffer Creation ---
 
@@ -309,9 +316,8 @@ namespace Kinesis
                 pipelineLayoutInfo.setLayoutCount = 1;
                 pipelineLayoutInfo.pSetLayouts = &compositeSetLayout;
                 // Add the push constant range
-                pipelineLayoutInfo.pushConstantRangeCount = 1; // <<< Set count to 1 >>>
+                pipelineLayoutInfo.pushConstantRangeCount = 1;                        // <<< Set count to 1 >>>
                 pipelineLayoutInfo.pPushConstantRanges = &compositePushConstantRange; // <<< Point to the range >>>
-
 
                 if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &compositePipelineLayout) != VK_SUCCESS)
                 {
@@ -323,7 +329,7 @@ namespace Kinesis
                 Pipeline::ConfigInfo configInfo{};
                 Pipeline::defaultConfigInfo(configInfo);                               // Get defaults
                 configInfo.renderPass = Kinesis::Renderer::SwapChain->getRenderPass(); // Renders to swapchain
-                configInfo.pipelineLayout = compositePipelineLayout; // Use the layout created above (now includes push constants)
+                configInfo.pipelineLayout = compositePipelineLayout;                   // Use the layout created above (now includes push constants)
                 // Disable depth test/write for fullscreen quad
                 configInfo.depthStencilInfo.depthTestEnable = VK_FALSE;
                 configInfo.depthStencilInfo.depthWriteEnable = VK_FALSE;
@@ -358,9 +364,8 @@ namespace Kinesis
 
                 // --- Pipeline Create Info ---
                 VkPipelineShaderStageCreateInfo shaderStages[2];
-                shaderStages[0] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, compositeVertModule, "main", nullptr };
-                shaderStages[1] = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, compositeFragModule, "main", nullptr };
-
+                shaderStages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, compositeVertModule, "main", nullptr};
+                shaderStages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, compositeFragModule, "main", nullptr};
 
                 // No vertex input for fullscreen triangle generated in VS
                 VkPipelineVertexInputStateCreateInfo emptyInputState{};
@@ -529,7 +534,7 @@ namespace Kinesis
                         gbufferClearValues[1].color = {{0.0f, 0.0f, 0.0f, 0.0f}}; // Normal
                         gbufferClearValues[2].color = {{0.0f, 0.0f, 0.0f, 1.0f}}; // Albedo (Clear to black)
                         gbufferClearValues[3].color = {{0.0f, 0.0f, 0.0f, 0.0f}}; // Properties
-                        gbufferClearValues[4].depthStencil = {1.0f, 0}; // Depth
+                        gbufferClearValues[4].depthStencil = {1.0f, 0};           // Depth
                         gbufferRenderPassBeginInfo.clearValueCount = static_cast<uint32_t>(gbufferClearValues.size());
                         gbufferRenderPassBeginInfo.pClearValues = gbufferClearValues.data();
 
@@ -560,27 +565,27 @@ namespace Kinesis
 
                     if (raytracing_active)
                     {
-                         // Barrier to transition RT output image layout before tracing
-                         VkImageMemoryBarrier rtOutputBarrier{};
-                         rtOutputBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-                         rtOutputBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-                         rtOutputBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-                         rtOutputBarrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // Assume read previously
-                         rtOutputBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-                         rtOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                         rtOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-                         rtOutputBarrier.image = Kinesis::RayTracerManager::rtOutput.image;
-                         rtOutputBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-                         vkCmdPipelineBarrier(commandBuffer,
-                                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                              VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                                              0, 0, nullptr, 0, nullptr, 1, &rtOutputBarrier);
+                        // Barrier to transition RT output image layout before tracing
+                        VkImageMemoryBarrier rtOutputBarrier{};
+                        rtOutputBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                        rtOutputBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT; // Optional if ignoring old data
+                        rtOutputBarrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                        rtOutputBarrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                        rtOutputBarrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+                        rtOutputBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        rtOutputBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                        rtOutputBarrier.image = Kinesis::RayTracerManager::rtOutput.image;
+                        rtOutputBarrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+
+                        vkCmdPipelineBarrier(commandBuffer,
+                                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, // Src Stage
+                                             VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,                                 // Dst Stage
+                                             0, 0, nullptr, 0, nullptr, 1, &rtOutputBarrier);
 
                         Kinesis::RayTracerManager::allocateAndUpdateRtDescriptorSet(Kinesis::RayTracerManager::tlas.structure, VK_NULL_HANDLE, 0);
                         Kinesis::RayTracerManager::bind(commandBuffer, globalDescriptorSets[frameIndex]);
                         Kinesis::RayTracerManager::traceRays(commandBuffer, Kinesis::GBuffer::extent.width, Kinesis::GBuffer::extent.height);
                     }
-
 
                     // =========================
                     // Pass 3: Compositing Pass (Onto Swapchain)
@@ -617,26 +622,31 @@ namespace Kinesis
 
                         if (raytracing_active)
                         {
-                            if (RayTracerManager::rtOutput.view == VK_NULL_HANDLE) {
-                                 std::cerr << "Warning: Raytracing active but rtOutput.view is null. Using fallback." << std::endl;
-                                 if (GBuffer::albedoAttachment.view == VK_NULL_HANDLE) throw std::runtime_error("Fallback G-Buffer view (albedo) is also null!");
-                                 rtInfo = {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-                            } else {
-                                 rtInfo = {GBuffer::sampler, RayTracerManager::rtOutput.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                            if (RayTracerManager::rtOutput.view == VK_NULL_HANDLE)
+                            {
+                                std::cerr << "Warning: Raytracing active but rtOutput.view is null. Using fallback." << std::endl;
+                                if (GBuffer::albedoAttachment.view == VK_NULL_HANDLE)
+                                    throw std::runtime_error("Fallback G-Buffer view (albedo) is also null!");
+                                rtInfo = {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+                            }
+                            else
+                            {
+                                rtInfo = {GBuffer::sampler, RayTracerManager::rtOutput.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
                             }
                         }
                         else
                         {
-                            if (GBuffer::albedoAttachment.view == VK_NULL_HANDLE) throw std::runtime_error("Fallback G-Buffer view (albedo) is null!");
+                            if (GBuffer::albedoAttachment.view == VK_NULL_HANDLE)
+                                throw std::runtime_error("Fallback G-Buffer view (albedo) is null!");
                             rtInfo = {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
                         }
 
                         std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
-                        descriptorWrites[0] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 0, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &posInfo, nullptr, nullptr };
-                        descriptorWrites[1] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &normInfo, nullptr, nullptr };
-                        descriptorWrites[2] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 2, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &albInfo, nullptr, nullptr };
-                        descriptorWrites[3] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 3, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &propInfo, nullptr, nullptr };
-                        descriptorWrites[4] = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 4, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &rtInfo, nullptr, nullptr };
+                        descriptorWrites[0] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 0, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &posInfo, nullptr, nullptr};
+                        descriptorWrites[1] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 1, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &normInfo, nullptr, nullptr};
+                        descriptorWrites[2] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 2, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &albInfo, nullptr, nullptr};
+                        descriptorWrites[3] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 3, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &propInfo, nullptr, nullptr};
+                        descriptorWrites[4] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr, compositeDescriptorSets[frameIndex], 4, 0, 1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &rtInfo, nullptr, nullptr};
                         vkUpdateDescriptorSets(g_Device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 
                         // --- Begin Swapchain Render Pass ---
@@ -648,14 +658,14 @@ namespace Kinesis
                                                 0, 1, &compositeDescriptorSets[frameIndex], 0, nullptr);
 
                         // <<< ADDED: Push the 'raytracing_active' flag to the shader >>>
-                        CompositePushConstant pushData = { raytracing_active ? 1 : 0 };
+                        CompositePushConstant pushData = {raytracing_active ? 1 : 0};
                         vkCmdPushConstants(
                             commandBuffer,
-                            compositePipelineLayout,    // The layout associated with the composite pipeline
-                            VK_SHADER_STAGE_FRAGMENT_BIT, // Stage where the constant is used
-                            0,                            // Offset within the push constant block
-                            sizeof(CompositePushConstant),// Size of the data being pushed
-                            &pushData);                   // Pointer to the data
+                            compositePipelineLayout,       // The layout associated with the composite pipeline
+                            VK_SHADER_STAGE_FRAGMENT_BIT,  // Stage where the constant is used
+                            0,                             // Offset within the push constant block
+                            sizeof(CompositePushConstant), // Size of the data being pushed
+                            &pushData);                    // Pointer to the data
 
                         // --- Draw Fullscreen Triangle ---
                         vkCmdDraw(commandBuffer, 3, 1, 0, 0);
@@ -674,7 +684,7 @@ namespace Kinesis
             catch (const std::exception &e)
             {
                 std::cerr << "Error during rendering loop: " << e.what() << std::endl;
-                 // return false; // Exit loop on error
+                // return false; // Exit loop on error
             }
             return true; // Signal loop continuation
         } // End else (window not closing)
@@ -739,43 +749,247 @@ namespace Kinesis
         builder.indices = indices; // Add indices to builder
         return std::make_shared<Model>(builder);
     }
+    
+    std::shared_ptr<Model> createSphereModel(float radius, int slices, int stacks)
+    {
+        std::vector<Mesh::Vertex> vertices;
+        std::vector<uint32_t> indices;
 
-    // Load initial game scene data
+        for (int i = 0; i <= stacks; ++i)
+        {
+            float V = i / (float)stacks;
+            float phi = V * glm::pi<float>();
+
+            for (int j = 0; j <= slices; ++j)
+            {
+                float U = j / (float)slices;
+                float theta = U * (glm::pi<float>() * 2);
+
+                // Calc geometric position
+                float x = cos(theta) * sin(phi);
+                float y = cos(phi);
+                float z = sin(theta) * sin(phi);
+
+                glm::vec3 pos = glm::vec3(x, y, z) * radius;
+                glm::vec3 normal = glm::vec3(x, y, z); // Normal of a sphere is just the normalized position
+                glm::vec2 uv = glm::vec2(U, V);
+
+                // Add Vertex (ensure 'index' matches your struct layout)
+                vertices.push_back(Mesh::Vertex(0, pos, {1.f, 1.f, 1.f}, normal, uv));
+            }
+        }
+
+        // Indices
+        for (int i = 0; i < stacks; ++i)
+        {
+            for (int j = 0; j < slices; ++j)
+            {
+                uint32_t first = (i * (slices + 1)) + j;
+                uint32_t second = first + slices + 1;
+
+                indices.push_back(first);
+                indices.push_back(second);
+                indices.push_back(first + 1);
+
+                indices.push_back(second);
+                indices.push_back(second + 1);
+                indices.push_back(first + 1);
+            }
+        }
+
+        Model::Builder builder{};
+        builder.vertices = vertices;
+        builder.indices = indices;
+        return std::make_shared<Model>(builder);
+    }
+
+// Load initial game scene data
     void loadGameObjects()
     {
-        std::shared_ptr<Model> mod_obj = nullptr;
-        std::shared_ptr<Model> mod_obj2 = nullptr;
-        try
-        {
-            // Adjust path based on execution directory relative to assets
-            std::string modelPath = "../../../kinesis/assets/models"; // Common relative path
+        // Clear existing objects to prevent duplication if called multiple times
+        gameObjects.clear();
+
+        // --- Configuration for Bunnies (FIXED) ---
+        const float OBJECT_SCALE = 5.0f; // Increased scale for visibility
+        // Estimated Y translation to place the bunny's base on the floor (y=-0.1f)
+        // A translation of 2.5 lifts the center (y=0) to place the base at y=0.
+        const float GROUND_Y_OFFSET = -0.5f; 
+        // Adjusted spacing for better visibility at larger scale
+        const float BUNNY_SPACING = 1.5f; 
+
+        // --- 1. Create Meshes ---
+        auto cubeMesh = createCubeModel({0.f, 0.f, 0.f});
+
+        // Setup common path and model name
+        std::string modelPath = "../../../kinesis/assets/models"; // Common relative path
 #ifdef __APPLE__
-             modelPath = "../../../../../../kinesis/assets/models";
+        modelPath = "../../../../../../kinesis/assets/models";
 #endif
-            mod_obj = std::make_shared<Model>(modelPath, "bunny_200.obj");
-            mod_obj2 = std::make_shared<Model>(modelPath, "cornell_box.obj");
-            // mod_obj = std::make_shared<Model>(modelPath, "smooth_vase.obj");
-            // mod_obj = createCubeModel({0.f, 0.f, 0.f}); // Use cube for testing
-        }
-        catch (const std::runtime_error &e)
+        const std::string modelName = "bunny_40k.obj";
+        const float SPHERE_RADIUS = 2.0f;
+        const float SPHERE_Y_POS = SPHERE_RADIUS - 0.1f; // Place base on floor (y=0)
+        const float SPHERE_Z_POS = 3.0f; // Place behind bunnies (Z=0)
+        auto bigSphereMesh = createSphereModel(SPHERE_RADIUS, 64, 64);
+
+        GameObject sphere = GameObject::createGameObject("background_sphere");
+            sphere.model = bigSphereMesh;
+            // Center X, place base on floor Y, place behind bunnies Z
+            sphere.transform.translation = {0.0f, SPHERE_Y_POS, SPHERE_Z_POS};
+            sphere.transform.scale = glm::vec3(1.0f); // Scale is handled by the radius in the mesh
+            
+            auto &materials = sphere.model->getMesh()->getMaterials();
+            Kinesis::Mesh::Material *sphereMat = nullptr;
+            if (materials.empty())
+                materials.push_back(new Kinesis::Mesh::Material(
+                    "background_white", glm::vec3(0.9f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f),
+                    0.0f, 1.0f, Kinesis::Mesh::MaterialType::METAL));
+            
+            sphereMat = materials[0];
+            sphereMat->setDiffuseColor({0.9f, 0.9f, 0.0f}); 
+            sphereMat->setRoughness(0.0f);
+            sphereMat->setType(Kinesis::Mesh::MaterialType::METAL);
+            
+            gameObjects.push_back(std::move(sphere));
+
+        // FLOOR
         {
-            std::cerr << "Failed to load OBJ model: " << e.what() << std::endl;
-            mod_obj = createCubeModel({0.f, 0.f, 2.5f}); // Fallback
+            GameObject floor = GameObject::createGameObject("floor");
+            floor.model = cubeMesh;
+            floor.transform.translation = {0.f, -0.1f, 0.f};
+            floor.transform.scale = {20.f, 0.1f, 20.f};
+
+            auto &materials = floor.model->getMesh()->getMaterials();
+            if (materials.empty())
+                materials.push_back(new Kinesis::Mesh::Material(
+                    "floor", glm::vec3(0.2f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f),
+                    0.8f, 1.0f, Kinesis::Mesh::MaterialType::DIFFUSE));
+            auto *mat = materials[0];
+            mat->setDiffuseColor({0.2f, 0.2f, 0.2f}); // Dark Grey
+            mat->setRoughness(0.8f);
+            mat->setType(Kinesis::Mesh::MaterialType::DIFFUSE);
+
+            gameObjects.push_back(std::move(floor));
         }
 
-        GameObject bunny = GameObject::createGameObject("bunny");
-        bunny.model = mod_obj;
-        bunny.transform.translation = {0.f, -2.0f, 2.5f}; // Adjusted y
-        bunny.transform.scale = {1.0f, 1.0f, 1.0f};
-        bunny.transform.rotation = {0.f, 0.f, 0.f};
-        gameObjects.push_back(std::move(bunny));
+        // --- 3. Create Main Bunnies (Diffuse, Metal, Dielectric) ---
 
-        GameObject cornell = GameObject::createGameObject("cornell");
-        cornell.model = mod_obj2;
-        cornell.transform.translation = {0.f, -0.5f, 2.5f}; // Adjusted y
-        cornell.transform.scale = {1.0f, 1.0f, 1.0f};
-        cornell.transform.rotation = {0.f, 0.f, 0.f};
-        gameObjects.push_back(std::move(cornell));
+        // Bunny #1: Diffuse (Matte) - Left
+        {
+            std::shared_ptr<Model> bunnyModel;
+            try {
+                // Load a fresh copy of the model
+                bunnyModel = std::make_shared<Model>(modelPath, modelName);
+            } catch (const std::exception& e) {
+                std::cerr << "Error loading bunny_200.obj for Diffuse: " << e.what() << std::endl;
+                // Skip this bunny if load fails
+            }
+
+            if (bunnyModel)
+            {
+                // Configure Material
+                auto &materials = bunnyModel->getMesh()->getMaterials();
+                Kinesis::Mesh::Material *bunnyMat = nullptr;
+                if (materials.empty()) {
+                    bunnyMat = new Kinesis::Mesh::Material(
+                        "matte_bunny_mat", glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f), glm::vec3(0.0f), glm::vec3(0.0f),
+                        1.0f, 1.0f, Kinesis::Mesh::MaterialType::DIFFUSE);
+                    materials.push_back(bunnyMat);
+                } else {
+                    bunnyMat = materials[0];
+                    bunnyMat->setDiffuseColor({0.0f, 1.0f, 0.0f}); // Green Matte
+                    bunnyMat->setRoughness(1.0f);
+                    bunnyMat->setIOR(1.0f);
+                    bunnyMat->setType(Kinesis::Mesh::MaterialType::DIFFUSE);
+                }
+
+                glm::vec3 pos = {-BUNNY_SPACING, GROUND_Y_OFFSET, 0.0f}; 
+                GameObject obj = GameObject::createGameObject("bunny_diffuse");
+                obj.model = bunnyModel;
+                obj.transform.translation = pos;
+                obj.transform.scale = glm::vec3(OBJECT_SCALE); // Increased Scale
+                gameObjects.push_back(std::move(obj));
+            }
+        }
+
+        // Bunny #2: Metal - right
+        {
+            std::shared_ptr<Model> bunnyModel;
+            try {
+                // Load a fresh copy of the model
+                bunnyModel = std::make_shared<Model>(modelPath, modelName);
+            } catch (const std::exception& e) {
+                std::cerr << "Error loading bunny_200.obj for Metal: " << e.what() << std::endl;
+                // Skip this bunny if load fails
+            }
+
+            if (bunnyModel)
+            {
+                // Configure Material
+                auto &materials = bunnyModel->getMesh()->getMaterials();
+                Kinesis::Mesh::Material *bunnyMat = nullptr;
+                if (materials.empty()) {
+                    bunnyMat = new Kinesis::Mesh::Material(
+                        "metal_bunny_mat", glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.9f), glm::vec3(0.0f), glm::vec3(0.0f),
+                        0.0f, 1.0f, Kinesis::Mesh::MaterialType::METAL);
+                    materials.push_back(bunnyMat);
+                } else {
+                    bunnyMat = materials[0];
+                    bunnyMat->setDiffuseColor({1.0f, 0.0f, 0.0f}); // Red Metal
+                    bunnyMat->setRoughness(0.05f); // Slightly rough metal
+                    bunnyMat->setIOR(1.0f);
+                    bunnyMat->setType(Kinesis::Mesh::MaterialType::METAL);
+                }
+
+                glm::vec3 pos = {BUNNY_SPACING, GROUND_Y_OFFSET, 0.0f}; 
+                GameObject obj = GameObject::createGameObject("bunny_metal");
+                obj.model = bunnyModel;
+                obj.transform.translation = pos;
+                obj.transform.scale = glm::vec3(OBJECT_SCALE); // Increased Scale
+                gameObjects.push_back(std::move(obj));
+            }
+        }
+
+        // Bunny #3: Dielectric (Glass) - center
+        {
+            std::shared_ptr<Model> bunnyModel;
+            try {
+                // Load a fresh copy of the model
+                bunnyModel = std::make_shared<Model>(modelPath, modelName);
+            } catch (const std::exception& e) {
+                std::cerr << "Error loading bunny_200.obj for Dielectric: " << e.what() << std::endl;
+                // Skip this bunny if load fails
+            }
+
+            if (bunnyModel)
+            {
+                // Configure Material
+                auto &materials = bunnyModel->getMesh()->getMaterials();
+                Kinesis::Mesh::Material *bunnyMat = nullptr;
+                if (materials.empty()) {
+                    bunnyMat = new Kinesis::Mesh::Material(
+                        "glass_bunny_mat", glm::vec3(0.8f, 0.8f, 1.0f), glm::vec3(0.5f), glm::vec3(1.0f), glm::vec3(0.0f),
+                        0.0f, 2.4f, Kinesis::Mesh::MaterialType::DIELECTRIC);
+                    materials.push_back(bunnyMat);
+                } else {
+                    bunnyMat = materials[0];
+                    bunnyMat->setDiffuseColor({0.8f, 0.8f, 1.0f}); // Light Blue/White Glass Tint
+                    bunnyMat->setRoughness(0.0f);
+                    bunnyMat->setIOR(2.4f);
+                    bunnyMat->setType(Kinesis::Mesh::MaterialType::DIELECTRIC);
+                }
+
+                glm::vec3 pos = {0, GROUND_Y_OFFSET, 0.0f};
+                GameObject obj = GameObject::createGameObject("bunny_glass");
+                obj.model = bunnyModel;
+                obj.transform.translation = pos;
+                obj.transform.scale = glm::vec3(OBJECT_SCALE); // Increased Scale
+                gameObjects.push_back(std::move(obj));
+            }
+        }
+
+
+        
+        std::cout << "Successfully loaded and placed three bunnies with unique materials: Diffuse, Metal, and Dielectric." << std::endl;
     }
 
 } // namespace Kinesis

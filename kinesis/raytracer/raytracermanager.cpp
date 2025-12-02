@@ -292,6 +292,8 @@ namespace Kinesis::RayTracerManager
         }
     }
 
+    //temp, may need to move
+    const uint32_t MAX_SCENE_OBJECTS = 1000;
     void createRtDescriptorSetLayout()
     {
         if (g_Device == VK_NULL_HANDLE) return;
@@ -305,32 +307,47 @@ namespace Kinesis::RayTracerManager
 
         // Binding 0: TLAS
         bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR, nullptr});
-        // Binding 1: Output Image (Storage)
+        
+        // Binding 1: Output Image
         bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
 
-        // Binding 2: Material Buffer (SSBO) <<< NEW >>>
-        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, nullptr}); // Accessible by CHIT/AHIT
+        // Binding 2: Material Buffer (SSBO)
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, nullptr});
 
-        // Binding 3: G-Buffer Position Sampler
-        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 4: G-Buffer Normal Sampler
-        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 5: G-Buffer Albedo Sampler
-        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Binding 6: G-Buffer Properties Sampler
-        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr});
-        // Add more bindings if needed (e.g., scene info UBO, texture arrays)
+        // Binding 3-6: G-Buffer Samplers
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr}); // Pos
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr}); // Norm
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr}); // Alb
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR, nullptr}); // Prop
+
+        // <<< CHANGED: Bindings 7 & 8 are now Arrays >>>
+        // Binding 7: Vertex Buffers (Array)
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_SCENE_OBJECTS, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, nullptr});
+        
+        // Binding 8: Index Buffers (Array)
+        bindings.push_back({currentBinding++, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, MAX_SCENE_OBJECTS, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR, nullptr});
+
+        // Use Binding Flags to allow "Partially Bound" descriptors (so we don't crash if we have fewer than 1000 objects)
+        std::vector<VkDescriptorBindingFlags> bindingFlags(bindings.size(), 0);
+        // Apply PARTIALLY_BOUND to the arrays (last two bindings)
+        bindingFlags[bindings.size() - 2] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT; // Vertices
+        bindingFlags[bindings.size() - 1] = VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT; // Indices
+
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+        bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        bindingFlagsInfo.bindingCount = static_cast<uint32_t>(bindingFlags.size());
+        bindingFlagsInfo.pBindingFlags = bindingFlags.data();
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pNext = &bindingFlagsInfo; // Link the flags
         layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
         layoutInfo.pBindings = bindings.data();
-        // Potentially add flags like VK_DESCRIPTOR_SET_LAYOUT_CREATE_UPDATE_AFTER_BIND_POOL_BIT
 
         if (vkCreateDescriptorSetLayout(g_Device, &layoutInfo, nullptr, &rtDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create Ray Tracing descriptor set layout!");
         }
-        std::cout << "RT Descriptor Set Layout created (with Material SSBO binding)." << std::endl;
+        std::cout << "RT Descriptor Set Layout created with Bindless support." << std::endl;
     }
 
     void createRayTracingPipeline()
@@ -463,7 +480,7 @@ namespace Kinesis::RayTracerManager
         pipelineInfo.pStages = stages.data();
         pipelineInfo.groupCount = static_cast<uint32_t>(shader_groups.size());
         pipelineInfo.pGroups = shader_groups.data();
-        pipelineInfo.maxPipelineRayRecursionDepth = 1; // Max recursion depth (e.g., 1 for primary rays only)
+        pipelineInfo.maxPipelineRayRecursionDepth = 10; // Max recursion depth (e.g., 1 for primary rays only)
         pipelineInfo.layout = rtPipelineLayout;        // Use the RT pipeline layout created above
         // pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // For pipeline derivatives
         // pipelineInfo.basePipelineIndex = -1;
@@ -677,6 +694,11 @@ namespace Kinesis::RayTracerManager
         deviceFeatures2.pNext = &as_features; // Link features struct
         vkGetPhysicalDeviceFeatures2(g_PhysicalDevice, &deviceFeatures2);
 
+        std::cout << "Ray Tracing Device Properties:" << std::endl;
+        std::cout << "  Max Pipeline Ray Recursion Depth: " << rt_pipeline_properties.maxRayRecursionDepth << std::endl;
+        std::cout << "  Shader Group Handle Size: " << rt_pipeline_properties.shaderGroupHandleSize << std::endl;
+        std::cout << "  Max Ray Hit Attribute Size: " << rt_pipeline_properties.maxRayHitAttributeSize << std::endl;
+
         std::cout << "Initializing Ray Tracing Manager..." << std::endl;
         try
         {
@@ -826,108 +848,124 @@ namespace Kinesis::RayTracerManager
         assert(Kinesis::materialBuffer != nullptr && Kinesis::materialBuffer->getBuffer() != VK_NULL_HANDLE && "Material Buffer is missing!"); // <<< NEW ASSERT >>>
         assert(tlasHandle != VK_NULL_HANDLE && "TLAS Handle missing");
 
-
-        // Allocate the descriptor set if it hasn't been allocated yet
         if (rtDescriptorSet == VK_NULL_HANDLE) {
              VkDescriptorSetAllocateInfo allocInfo{};
              allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
              allocInfo.descriptorPool = g_DescriptorPool;
              allocInfo.descriptorSetCount = 1;
              allocInfo.pSetLayouts = &rtDescriptorSetLayout;
+             
+             // Variable descriptor count info might be needed if strictly required, 
+             // but often redundant if max is fixed in layout.
+             
              if (vkAllocateDescriptorSets(g_Device, &allocInfo, &rtDescriptorSet) != VK_SUCCESS) {
                  throw std::runtime_error("Failed to allocate Ray Tracing descriptor set!");
              }
-             std::cout << "RT Descriptor Set Allocated." << std::endl;
         }
 
-        // --- Prepare Descriptor Writes for the RT set (Set 1) ---
-        // <<< INCREASE ARRAY SIZE FOR MATERIAL BUFFER >>>
         std::vector<VkWriteDescriptorSet> descriptorWrites;
-        std::vector<VkDescriptorImageInfo> gbufferInfos(4); // Keep image infos alive
-
-        VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{};
-        VkDescriptorImageInfo outputImageInfo{};
-        VkDescriptorBufferInfo materialBufferInfo{}; // <<< NEW: Keep buffer info alive >>>
-
-        // --- Bindings adjusted for Material Buffer ---
-        uint32_t currentBinding = 0;
-
+        
+        // --- Standard Bindings (0-6) ---
         // 0: TLAS
-        tlasWriteInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        VkWriteDescriptorSetAccelerationStructureKHR tlasWriteInfo{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR};
         tlasWriteInfo.accelerationStructureCount = 1;
         tlasWriteInfo.pAccelerationStructures = &tlasHandle;
-        VkWriteDescriptorSet tlasWrite{};
-        tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        tlasWrite.pNext = &tlasWriteInfo;
+        
+        VkWriteDescriptorSet tlasWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         tlasWrite.dstSet = rtDescriptorSet;
-        tlasWrite.dstBinding = currentBinding++; // Use incrementing binding index
-        tlasWrite.dstArrayElement = 0;
+        tlasWrite.dstBinding = 0;
         tlasWrite.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         tlasWrite.descriptorCount = 1;
+        tlasWrite.pNext = &tlasWriteInfo;
         descriptorWrites.push_back(tlasWrite);
 
-        // 1: Output Image (Storage)
-        outputImageInfo.imageView = rtOutput.view;
-        outputImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-        VkWriteDescriptorSet outputImageWrite{};
-        outputImageWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        outputImageWrite.dstSet = rtDescriptorSet;
-        outputImageWrite.dstBinding = currentBinding++; // Use incrementing binding index
-        outputImageWrite.dstArrayElement = 0;
-        outputImageWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-        outputImageWrite.descriptorCount = 1;
-        outputImageWrite.pImageInfo = &outputImageInfo;
-        descriptorWrites.push_back(outputImageWrite);
+        // 1: Output Image
+        VkDescriptorImageInfo outputImageInfo{VK_NULL_HANDLE, rtOutput.view, VK_IMAGE_LAYOUT_GENERAL};
+        VkWriteDescriptorSet outWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        outWrite.dstSet = rtDescriptorSet;
+        outWrite.dstBinding = 1;
+        outWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        outWrite.descriptorCount = 1;
+        outWrite.pImageInfo = &outputImageInfo;
+        descriptorWrites.push_back(outWrite);
 
-        // 2: Material Buffer (SSBO) <<< NEW >>>
-        materialBufferInfo = Kinesis::materialBuffer->descriptorInfo(); // Get info from global buffer
-        VkWriteDescriptorSet materialWrite{};
-        materialWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        materialWrite.dstSet = rtDescriptorSet;
-        materialWrite.dstBinding = currentBinding++; // Use incrementing binding index
-        materialWrite.dstArrayElement = 0;
-        materialWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        materialWrite.descriptorCount = 1;
-        materialWrite.pBufferInfo = &materialBufferInfo;
-        descriptorWrites.push_back(materialWrite);
+        // 2: Material Buffer
+        VkDescriptorBufferInfo matBufInfo = Kinesis::materialBuffer->descriptorInfo();
+        VkWriteDescriptorSet matWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+        matWrite.dstSet = rtDescriptorSet;
+        matWrite.dstBinding = 2;
+        matWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrite.descriptorCount = 1;
+        matWrite.pBufferInfo = &matBufInfo;
+        descriptorWrites.push_back(matWrite);
 
-        // 3: G-Buffer Position
-        gbufferInfos[0] = {GBuffer::sampler, GBuffer::positionAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet gbufferPosWrite{};
-        gbufferPosWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        gbufferPosWrite.dstSet = rtDescriptorSet;
-        gbufferPosWrite.dstBinding = currentBinding++; // Use incrementing binding index
-        gbufferPosWrite.dstArrayElement = 0;
-        gbufferPosWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        gbufferPosWrite.descriptorCount = 1;
-        gbufferPosWrite.pImageInfo = &gbufferInfos[0];
-        descriptorWrites.push_back(gbufferPosWrite);
+        // 3-6: G-Buffer Samplers (Keep your existing GBuffer logic here, simplified for brevity)
+        std::vector<VkDescriptorImageInfo> gbufferInfos = {
+            {GBuffer::sampler, GBuffer::positionAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {GBuffer::sampler, GBuffer::normalAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+            {GBuffer::sampler, GBuffer::propertiesAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}
+        };
+        for(int i=0; i<4; ++i) {
+            VkWriteDescriptorSet gbWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            gbWrite.dstSet = rtDescriptorSet;
+            gbWrite.dstBinding = 3 + i;
+            gbWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            gbWrite.descriptorCount = 1;
+            gbWrite.pImageInfo = &gbufferInfos[i];
+            descriptorWrites.push_back(gbWrite);
+        }
 
-        // 4: G-Buffer Normal
-        gbufferInfos[1] = {GBuffer::sampler, GBuffer::normalAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet gbufferNormWrite = gbufferPosWrite; // Copy common fields
-        gbufferNormWrite.dstBinding = currentBinding++;
-        gbufferNormWrite.pImageInfo = &gbufferInfos[1];
-        descriptorWrites.push_back(gbufferNormWrite);
+        // --- Bindless Arrays (7 & 8) ---
+        // Collect buffers from all objects
+       // Resize vectors to match gameObjects size exactly
+std::vector<VkDescriptorBufferInfo> vertexBufferInfos(Kinesis::gameObjects.size());
+std::vector<VkDescriptorBufferInfo> indexBufferInfos(Kinesis::gameObjects.size());
 
-        // 5: G-Buffer Albedo
-        gbufferInfos[2] = {GBuffer::sampler, GBuffer::albedoAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet gbufferAlbWrite = gbufferPosWrite; // Copy common fields
-        gbufferAlbWrite.dstBinding = currentBinding++;
-        gbufferAlbWrite.pImageInfo = &gbufferInfos[2];
-        descriptorWrites.push_back(gbufferAlbWrite);
+// Fallback buffer (e.g., floor) to prevent crashes on null slots
+auto fallbackVert = Kinesis::gameObjects[0].model->getVertexBuffer();
 
-        // 6: G-Buffer Properties
-        gbufferInfos[3] = {GBuffer::sampler, GBuffer::propertiesAttachment.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet gbufferPropWrite = gbufferPosWrite; // Copy common fields
-        gbufferPropWrite.dstBinding = currentBinding++;
-        gbufferPropWrite.pImageInfo = &gbufferInfos[3];
-        descriptorWrites.push_back(gbufferPropWrite);
+for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i) {
+    const auto& go = Kinesis::gameObjects[i];
 
+    if (go.model && go.model->getVertexBuffer() != VK_NULL_HANDLE) {
+        // Valid object: Bind its actual buffers
+        vertexBufferInfos[i] = {go.model->getVertexBuffer(), 0, VK_WHOLE_SIZE};
 
-        // --- Update the Descriptor Set ---
+        if (go.model->getIndexBuffer() != VK_NULL_HANDLE) {
+            indexBufferInfos[i] = {go.model->getIndexBuffer(), 0, VK_WHOLE_SIZE};
+        } else {
+            // Bind vertex buffer as dummy index buffer if missing
+            indexBufferInfos[i] = {go.model->getVertexBuffer(), 0, VK_WHOLE_SIZE};
+        }
+    } else {
+        // Empty/Light/Camera object: Bind fallback to keep indices aligned
+        vertexBufferInfos[i] = {fallbackVert, 0, VK_WHOLE_SIZE};
+        indexBufferInfos[i] = {fallbackVert, 0, VK_WHOLE_SIZE};
+    }
+}
+
+        if (!vertexBufferInfos.empty()) {
+            // 7: Vertex Buffers Array
+            VkWriteDescriptorSet vertArrayWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            vertArrayWrite.dstSet = rtDescriptorSet;
+            vertArrayWrite.dstBinding = 7;
+            vertArrayWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            vertArrayWrite.descriptorCount = static_cast<uint32_t>(vertexBufferInfos.size());
+            vertArrayWrite.pBufferInfo = vertexBufferInfos.data();
+            descriptorWrites.push_back(vertArrayWrite);
+
+            // 8: Index Buffers Array
+            VkWriteDescriptorSet indexArrayWrite{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            indexArrayWrite.dstSet = rtDescriptorSet;
+            indexArrayWrite.dstBinding = 8;
+            indexArrayWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            indexArrayWrite.descriptorCount = static_cast<uint32_t>(indexBufferInfos.size());
+            indexArrayWrite.pBufferInfo = indexBufferInfos.data();
+            descriptorWrites.push_back(indexArrayWrite);
+        }
+
         vkUpdateDescriptorSets(g_Device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-        // std::cout << "RT Descriptor Set updated." << std::endl; // Can be noisy
     }
 
     // --- bind ---
@@ -1064,11 +1102,18 @@ namespace Kinesis::RayTracerManager
             delete_acceleration_structure(b);
         blas.clear();
 
-        uint32_t blasIndex = 0; // Keep track of which blas corresponds to which game object
-        for (const auto &gameObject : Kinesis::gameObjects)
+        // Resize blas vector to match gameObjects size, with null entries for objects without BLAS
+        blas.resize(Kinesis::gameObjects.size());
+        
+        for (size_t objectIndex = 0; objectIndex < Kinesis::gameObjects.size(); ++objectIndex)
         {
+            const auto &gameObject = Kinesis::gameObjects[objectIndex];
+            
             if (!gameObject.model || !gameObject.model->getMesh() || gameObject.model->getMesh()->numVertices() == 0)
+            {
+                // No BLAS for this object - leave it as default-initialized (address = 0)
                 continue;
+            }
 
             // 1. Get Geometry Data Pointers/Addresses
             VkBuffer vertexBuffer = gameObject.model->getVertexBuffer();
@@ -1204,11 +1249,16 @@ namespace Kinesis::RayTracerManager
             // 7. Cleanup Scratch Buffer
             delete_scratch_buffer(scratch);
 
-            // 8. Store BLAS
-            blas.push_back(blasEntry); // Add the newly created BLAS to the vector
-            blasIndex++;               // Increment for the next object
+            // 8. Store BLAS at the correct index (matching gameObject index)
+            blas[objectIndex] = blasEntry;
         }
-        std::cout << "Created " << blas.size() << " BLAS objects." << std::endl;
+        
+        // Count how many BLAS were actually created
+        uint32_t blasCount = 0;
+        for (const auto& b : blas) {
+            if (b.address != 0) blasCount++;
+        }
+        std::cout << "Created " << blasCount << " BLAS objects out of " << blas.size() << " game objects." << std::endl;
     }
 
     // --- create_tlas ---
@@ -1239,7 +1289,6 @@ namespace Kinesis::RayTracerManager
 
         // Create instance descriptions for each object that has a corresponding BLAS
         std::vector<VkAccelerationStructureInstanceKHR> instances;
-        uint32_t customInstanceIndex = 0; // Track index for shaders (e.g., material lookup)
         // Ensure blas vector size matches gameObjects or use a map
         // Basic check: ensure we don't access blas out of bounds
         if (blas.size() < Kinesis::gameObjects.size())
@@ -1266,7 +1315,7 @@ namespace Kinesis::RayTracerManager
             glm::mat4 transposed = glm::transpose(modelMatrix);
             memcpy(&instance.transform, &transposed, sizeof(VkTransformMatrixKHR));
 
-            instance.instanceCustomIndex = customInstanceIndex++; // Unique ID accessible in shaders
+            instance.instanceCustomIndex = static_cast<uint32_t>(i); // Use the actual object index for material lookup
             instance.mask = 0xFF;                                 // Visibility mask (default: visible to all rays)
             // Offset into the SBT hit group records.
             // Simple case: All instances use the same hit group (index 2 from group creation), offset 0.

@@ -70,9 +70,12 @@ namespace Kinesis::Mesh {
         bool isEmissive() const { return emittedColor != glm::vec3(0.0f); } // Check if it emits light
 
 
-        // Removed: Shade function (handled by shaders/raytracer)
-        // Removed: getDiffuseColor(s, t) (texture sampling handled by shaders)
-        // Removed: ComputeAverageTextureColor
+        void setDiffuseColor(const glm::vec3 &color) { diffuseColor = color; }
+        void setReflectiveColor(const glm::vec3 &color) { reflectiveColor = color; }
+        void setRoughness(float r) { roughness = r; }
+        void setEmittedColor(const glm::vec3 &color) { emittedColor = color; }
+        void setIOR(float ior) { indexOfRefraction = ior; }
+        void setType(MaterialType t) { type = t; }
 
 	protected:
         // Prevent accidental copying if not intended, or implement proper copy semantics
@@ -80,6 +83,7 @@ namespace Kinesis::Mesh {
 		const Material& operator=(const Material&) = delete;
         // Allow moving
         Material(Material&&) = default;
+        
         Material& operator=(Material&&) = default;
 
 

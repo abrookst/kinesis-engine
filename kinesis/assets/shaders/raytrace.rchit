@@ -1,233 +1,229 @@
-#version 460 core
+// fileName: kinesis/assets/shaders/raytrace.rchit
+#version 460
 #extension GL_EXT_ray_tracing : require
-#extension GL_EXT_nonuniform_qualifier : enable
-#extension GL_EXT_scalar_block_layout : enable // Or std430 if preferred for blocks
-#extension GL_GOOGLE_include_directive : enable
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_nonuniform_qualifier : require
 
-// --- Structures ---
+// --- Payload (Matches RGen) ---
+layout(location = 0) rayPayloadInEXT HitPayload {
+    vec3 hitColor;
+    vec3 attenuation;
+    vec3 nextRayOrigin;
+    vec3 nextRayDir;
+    int done;
+    uint seed;
+} payload;
 
-// Define structure for the ray payload
-struct RayPayload {
-    vec3 hitValue;       // Color accumulated along the ray path
-    float hitT;          // Distance to the hit point (can be updated by intersection)
-    uint recursionDepth; // Current recursion depth
-    // Add other needed payload members (e.g., PRNG state, flags)
+hitAttributeEXT vec2 attribs;
+
+// --- Bindings ---
+// NOTE: Make sure Binding 2 matches your C++ struct exactly (vec4s)
+struct MaterialData {
+   vec4 baseColor;
+   vec4 emissiveColor;
+   float roughness;
+   float metallic;
+   float ior;
+   int type;
 };
+layout(set = 1, binding = 2, scalar) readonly buffer MaterialBuffer { MaterialData materials[]; } materialBuffer;
 
-// Define structure for hit information (passed via hitAttributeEXT)
-// Ensure this matches the attributes output by your intersection shader (if any)
-// or how you compute/store hit details.
-struct HitInfo {
-    vec3 normal;        // World-space normal at the hit point
-    float hitT;         // Redundant? gl_HitTEXT provides this. Included for completeness.
-    uint materialIndex; // Index into the material buffer for this geometry instance
-    bool frontFacing;   // True if the ray hit the front face
-    // Add other needed hit attributes (e.g., barycentric coordinates, texture coords)
-};
+struct Vertex { vec3 position; vec3 color; vec3 normal; vec2 texCoord; int _pad; };
+// Arrays for bindless access - indices must be aligned in C++ descriptor update!
+layout(set = 1, binding = 7, scalar) readonly buffer VertexBuffer { Vertex v[]; } vertices[];
+layout(set = 1, binding = 8, scalar) readonly buffer IndexBuffer { uint i[]; } indices[];
 
-// Define structure matching your C++ MaterialData struct
-// Using std430 layout for SSBO compatibility
-layout(std430) struct MaterialData {
-    vec3 baseColor;
-    vec3 emissiveColor;
-    float roughness;
-    float metallic;
-    float ior;      // Index of Refraction
-    int type;       // 0: Diffuse, 1: Metal, 2: Dielectric, 3: Light
-    // Add padding here if necessary to match C++ std430 alignment/size
-};
+// --- Random Float Generator [0, 1) ---
+float rnd(inout uint prev) {
+  prev = (prev * 1664525u + 1013904223u);
+  return float(prev & 0x00FFFFFF) / float(0x01000000);
+}
 
+// --- Helper: Sample Cosine Weighted Hemisphere (Diffuse) ---
+vec3 sampleHemisphere(vec3 normal, inout uint seed) {
+    // Sample random angles
+    float r1 = rnd(seed);
+    float r2 = rnd(seed);
+    
+    // Cosine-weighted hemisphere sampling
+    float theta = 2.0 * 3.14159265359 * r1;  // Azimuth
+    float phi = acos(sqrt(r2));              // Polar angle (cosine weighted)
+    
+    float x = sin(phi) * cos(theta);
+    float y = sin(phi) * sin(theta);
+    float z = cos(phi);
+    
+    // Create local coordinate system from normal
+    vec3 u = normalize(cross(abs(normal.x) < 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0), normal));
+    vec3 v = cross(normal, u);
+    
+    // Transform to world space
+    return normalize(x * u + y * v + z * normal);
+}
 
-// --- Descriptor Set Bindings ---
-
-// Camera Uniform Buffer Object (Set 0, Binding 0 - Matches C++ globalSetLayout)
-layout(std140, set = 0, binding = 0) uniform CameraUBO {
-    mat4 projection;
-    mat4 view;
-    mat4 inverseProjection;
-    mat4 inverseView;
-} cameraData;
-
-// Material Storage Shader Buffer Object (Set 1, Binding 2 - Matches C++ rtDescriptorSetLayout)
-// Uses the MaterialData struct defined above
-layout(std430, set = 1, binding = 2) buffer MaterialBuffer {
-     MaterialData materials[]; // Array of materials
-} materialAccess;
-
-// Top Level Acceleration Structure (Set 1, Binding 0 - Matches C++ rtDescriptorSetLayout)
-layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
-
-
-// --- Shader Inputs/Outputs ---
-
-// Incoming ray payload
-layout(location = 0) rayPayloadInEXT RayPayload prdct;
-
-// Hit attributes (populated by hardware or intersection shader)
-// Note: Direct use of gl_PrimitiveID, gl_InstanceCustomIndexEXT etc. is common too
-hitAttributeEXT HitInfo hitData;
-
-
-// --- Helper Functions ---
-
-// Schlick approximation for Fresnel reflectance
-float fresnel_schlick(float cos_theta_i, float ior_ratio) {
-    // Using eta_ratio = eta_incident / eta_transmitted
-    float r0 = (1.0 - ior_ratio) / (1.0 + ior_ratio);
+// --- Helper: Schlick Fresnel ---
+float schlick(float cosine, float ref_idx) {
+    float r0 = (1.0 - ref_idx) / (1.0 + ref_idx);
     r0 = r0 * r0;
-    // Clamp cos_theta_i to avoid issues with pow when negative
-    cos_theta_i = max(cos_theta_i, 0.0); // Ensure cos_theta is non-negative for the formula
-    return r0 + (1.0 - r0) * pow(1.0 - cos_theta_i, 5.0); // Use 1.0 - cos_theta for Schlick
+    return r0 + (1.0 - r0) * pow((1.0 - cosine), 5.0);
 }
 
-// Function to trace a new ray
-// Adapt this function signature and implementation based on your needs
-// (e.g., passing PRNG state, handling different ray types)
-vec3 traceRay(vec3 origin, vec3 direction, uint recursionDepth) {
-    // Basic recursion depth limit
-    if (recursionDepth >= 4) return vec3(0.0); // Return black or background color
-
-    // Initialize payload for the new ray
-    RayPayload newPayload;
-    newPayload.recursionDepth = recursionDepth;
-    newPayload.hitValue = vec3(0.0); // Initialize color contribution to black
-    newPayload.hitT = 10000.0; // Initialize hit distance to far away
-
-    // Define ray flags, masks, and SBT parameters
-    uint rayFlags = gl_RayFlagsOpaqueEXT; // Use opaque unless dealing with transparency/any-hit
-    uint cullMask = 0xFF;                 // Standard visibility mask
-    uint sbtOffset = 0;                   // SBT record offset (can depend on material)
-    uint sbtStride = 0;                   // SBT record stride (can depend on material groups)
-    uint missIndex = 0;                   // Index of the miss shader in the SBT
-
-    // Trace the ray
-    traceRayEXT(topLevelAS, // Use the declared TLAS uniform
-                rayFlags,
-                cullMask,
-                sbtOffset,
-                sbtStride,
-                missIndex,
-                origin,
-                0.001,      // tmin - small offset to avoid self-intersection
-                direction,
-                10000.0,    // tmax - scene bounds or large value
-                0);         // Payload location (matches layout location index)
-
-    // Return the color accumulated by the traced ray (stored in newPayload.hitValue)
-    return newPayload.hitValue;
+// --- Helper: Refract using Snell's law ---
+bool refractRay(vec3 v, vec3 n, float ni_over_nt, out vec3 refracted) {
+    vec3 uv = normalize(v);
+    float dt = dot(uv, n);
+    float discriminant = 1.0 - ni_over_nt * ni_over_nt * (1.0 - dt * dt);
+    
+    if (discriminant > 0.0) {
+        refracted = ni_over_nt * (uv - n * dt) - n * sqrt(discriminant);
+        return true;
+    } else {
+        return false; // Total Internal Reflection
+    }
 }
-
-
-// --- Main Shader Logic ---
 
 void main() {
-    // --- Get Material Data ---
-    // Use the instance index provided by the TLAS build
-    uint materialIndex = gl_InstanceCustomIndexEXT;
-    // TODO: Add bounds checking for materialIndex if necessary
-    // if (materialIndex >= materialAccess.materials.length()) { handle error }
-    MaterialData mat = materialAccess.materials[materialIndex];
+    uint instanceID = gl_InstanceCustomIndexEXT;
+    uint primitiveID = gl_PrimitiveID;
 
-    // --- Ray and Hit Point Setup ---
-    vec3 origin = gl_WorldRayOriginEXT;       // Ray origin in world space
-    vec3 direction = gl_WorldRayDirectionEXT; // Ray direction in world space
-    vec3 hitPoint = origin + direction * gl_HitTEXT; // Hit point in world space
+    // --- Geometry Fetch ---
+    // Requires VK_BUFFER_USAGE_STORAGE_BUFFER_BIT in C++ creation!
+    uint i0 = indices[nonuniformEXT(instanceID)].i[3 * primitiveID + 0];
+    uint i1 = indices[nonuniformEXT(instanceID)].i[3 * primitiveID + 1];
+    uint i2 = indices[nonuniformEXT(instanceID)].i[3 * primitiveID + 2];
 
-    // --- Normal Calculation ---
-    // Assuming hitData.normal is the correct world-space geometric normal
-    // Shading normal might differ if using normal maps
-    vec3 worldNormal = normalize(hitData.normal); // Ensure normalization
+    vec3 n0 = vertices[nonuniformEXT(instanceID)].v[i0].normal;
+    vec3 n1 = vertices[nonuniformEXT(instanceID)].v[i1].normal;
+    vec3 n2 = vertices[nonuniformEXT(instanceID)].v[i2].normal;
 
-    // --- Determine Facing ---
-    // Check if the ray hit the front or back face of the geometry
-    bool frontFace = dot(direction, worldNormal) < 0.0;
-    // Ensure the normal used for calculations points outwards from the surface
-    vec3 faceNormal = frontFace ? worldNormal : -worldNormal;
+    // Interpolate normal
+    vec3 bary = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
+    vec3 localNormal = normalize(n0 * bary.x + n1 * bary.y + n2 * bary.z);
+    vec3 worldNormal = normalize(mat3(gl_ObjectToWorldEXT) * localNormal);
 
-    // --- Material Interaction ---
-    vec3 scattered_color = vec3(0.0); // Final color contribution for this hit
+    vec3 hitPos = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
+    vec3 rayDir = normalize(gl_WorldRayDirectionEXT);
+    
+    // --- Material Fetch ---
+    MaterialData mat = materialBuffer.materials[instanceID];
+    uint seed = payload.seed; // Local copy of seed
 
-    // --- Dielectric Material (Glass, Water, etc.) ---
-    if (mat.type == 2) {
-        float refract_ior = mat.ior; // Material's index of refraction
-        float eta_ratio;             // Ratio of IORs: eta_incident / eta_transmitted
-        vec3 outward_normal;         // Normal pointing away from the surface into the incident medium
-
-        if (frontFace) { // Ray entering the dielectric from outside (e.g., air)
-            outward_normal = worldNormal; // Already points outward relative to surface
-            eta_ratio = 1.0 / refract_ior; // Assuming outside IOR is 1.0 (air)
-        } else {         // Ray exiting the dielectric into outside (e.g., air)
-            outward_normal = -worldNormal; // Flip normal to point outward (back into incident medium)
-            eta_ratio = refract_ior / 1.0;
-        }
-
-        // Cosine of the angle between incoming direction and outward normal
-        float cos_theta_i = dot(-direction, outward_normal);
-
-        // Check for Total Internal Reflection (TIR)
-        float sin_theta_t_sq = eta_ratio * eta_ratio * (1.0 - cos_theta_i * cos_theta_i);
-        bool cannot_refract = sin_theta_t_sq > 1.0;
-
-        float reflectance; // Probability of reflection
-        vec3 refracted_dir; // Direction of refracted ray (if possible)
-
-        if (cannot_refract) {
-            reflectance = 1.0; // Must reflect due to TIR
-        } else {
-            // Calculate reflectance using Fresnel equation (Schlick's approximation)
-            reflectance = fresnel_schlick(cos_theta_i, eta_ratio);
-            // Calculate refraction direction using Snell's Law
-            float cos_theta_t = sqrt(max(0.0, 1.0 - sin_theta_t_sq));
-            refracted_dir = normalize(eta_ratio * direction + (eta_ratio * cos_theta_i - cos_theta_t) * outward_normal);
-        }
-
-        // Calculate reflection direction (always possible)
-        vec3 reflected_dir = reflect(direction, outward_normal);
-
-        // --- Trace Reflection or Refraction ---
-        // Simple probabilistic choice based on reflectance.
-        // For more accuracy, could trace both and blend, or use Russian Roulette.
-        if (reflectance > 0.5) { // Reflect (using 0.5 threshold, could use random float)
-            scattered_color = traceRay(hitPoint + outward_normal * 0.0001, reflected_dir, prdct.recursionDepth + 1);
-            // Reflection from dielectrics is typically not tinted (clear reflection)
-        } else { // Refract
-            scattered_color = traceRay(hitPoint - outward_normal * 0.0001, refracted_dir, prdct.recursionDepth + 1);
-            // Apply filter color for transmission through colored glass/dielectric
-            scattered_color *= mat.baseColor; // Tint based on material's base color
-        }
-
-    // --- Diffuse Material ---
-    } else if (mat.type == 0) {
-        // Example: Lambertian reflection (very basic)
-        // A proper implementation would involve sampling lights or tracing a scattered ray
-        scattered_color = mat.baseColor * 0.5; // Placeholder: Assume ambient light only
-
-        // Example for tracing a scattered ray:
-        // vec3 random_dir = normalize(faceNormal + random_unit_vector()); // Need a random function
-        // scattered_color = mat.baseColor * traceRay(hitPoint + faceNormal * 0.0001, random_dir, prdct.recursionDepth + 1);
-        // pdf = max(0.001, dot(faceNormal, random_dir) / 3.14159265);
-        // scattered_color /= pdf; // Basic Monte Carlo estimator
-
-    // --- Metal Material ---
-    } else if (mat.type == 1) {
-        vec3 reflected_dir = reflect(normalize(direction), faceNormal);
-        // Add fuzziness for rough metals (requires random function)
-        // reflected_dir = normalize(reflected_dir + mat.roughness * random_in_unit_sphere());
-        scattered_color = mat.baseColor * traceRay(hitPoint + faceNormal * 0.0001, reflected_dir, prdct.recursionDepth + 1);
-        // Metal reflection is tinted by its base color
-
-    // --- Light Material ---
-    } else if (mat.type == 3) {
-        // Light sources simply emit their color, ending the ray path here for emission
-        scattered_color = mat.emissiveColor;
-    } else {
-        // Unknown material type - return an error color
-        scattered_color = vec3(1.0, 0.0, 1.0); // Magenta
+    // --- Material Logic ---
+    // TYPE 0: DIFFUSE
+    if (mat.type == 0) {
+        // Sample a random direction in the hemisphere around the normal
+        vec3 diffuseDir = sampleHemisphere(worldNormal, seed);
+        
+        // Return material properties for next bounce
+        payload.hitColor = vec3(0.0);  // No direct emission
+        payload.attenuation = mat.baseColor.rgb;  // Use actual material albedo color
+        payload.nextRayOrigin = hitPos + worldNormal * 0.001;
+        payload.nextRayDir = diffuseDir;
+        payload.done = 0; // Continue tracing
     }
+    // TYPE 1: METAL
+else if (mat.type == 1) {
+    // Perfect reflection: r = v - 2(v·n)n
+    vec3 reflected = reflect(rayDir, worldNormal);
+    
+    // --- ADD ROUGHNESS: Perturb the reflection direction ---
+    if (mat.roughness > 0.0) {
+        // Generate random numbers for perturbation
+        float r1 = rnd(seed);
+        float r2 = rnd(seed);
+        
+        // Create a random vector on a sphere
+        float phi = 2.0 * 3.14159265359 * r1;
+        float cosTheta = 2.0 * r2 - 1.0;
+        float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
+        
+        vec3 randomVec = vec3(
+            sinTheta * cos(phi),
+            sinTheta * sin(phi),
+            cosTheta
+        );
+        
+        // Scale random vector by roughness
+        vec3 perturbation = randomVec * mat.roughness;
+        
+        // Add perturbation to reflection direction and normalize
+        reflected = normalize(reflected + perturbation);
+    }
+    
+    // Apply metal color tint (albedo)
+    vec3 metalColor = mat.baseColor.rgb;
+    
+    // Only scatter if the reflected ray points away from the surface
+    if (dot(reflected, worldNormal) > 0.0) {
+        payload.hitColor = vec3(0.0);
+        payload.attenuation = metalColor; // Tint reflection with metal color!
+        payload.nextRayOrigin = hitPos + worldNormal * 0.001;
+        payload.nextRayDir = reflected;
+        payload.done = 0; // Continue tracing
+    } else {
+        // Ray scattered into the surface - absorb it
+        payload.hitColor = vec3(0.0);
+        payload.attenuation = vec3(0.0);
+        payload.done = 1; // Stop tracing
+    }
+}
+    // TYPE 2: GLASS / DIELECTRIC
+else if (mat.type == 2) {
+        vec3 outwardNormal;
+        float ni_over_nt;
+        vec3 attenuation = vec3(1.0); // Default no absorption
 
-    // --- Finalize Payload ---
-    // Write the calculated color contribution back to the payload
-    prdct.hitValue = scattered_color;
-    // Optionally update hit distance if needed elsewhere
-    // prdct.hitT = gl_HitTEXT;
+        // Check if we are hitting front (entering) or back (exiting)
+        if (dot(rayDir, worldNormal) > 0.0) {
+            // EXITING the glass
+            outwardNormal = -worldNormal;
+            ni_over_nt = mat.ior; // Glass -> Air (assuming air is 1.0)
+            
+            // --- FIX: BEER'S LAW (Absorption) ---
+            // Light has traveled distance `gl_HitTEXT` inside the material.
+            // Absorb light based on distance and material color.
+            // Darker baseColor = higher density/absorbance.
+            vec3 absorbance = -log(mat.baseColor.rgb + vec3(0.0001)); // Prevent log(0)
+            attenuation = exp(-absorbance * gl_HitTEXT); 
+        } else {
+            // ENTERING the glass
+            outwardNormal = worldNormal;
+            ni_over_nt = 1.0 / mat.ior; // Air -> Glass
+        }
+
+        vec3 refractedDir;
+        float reflectProb;
+        
+        // --- FIX: CHECK FOR TOTAL INTERNAL REFLECTION ---
+        // Attempt to calculate refraction direction
+        bool canRefract = refractRay(rayDir, outwardNormal, ni_over_nt, refractedDir);
+
+        if (canRefract) {
+            // Calculate Schlick probability only if refraction is possible
+            float cosine = dot(-rayDir, outwardNormal);
+            reflectProb = schlick(cosine, 1.0 / mat.ior);
+        } else {
+            // Total Internal Reflection: Must reflect 100%
+            reflectProb = 1.0;
+        }
+
+        // Stochastic Refraction/Reflection
+        if (rnd(seed) < reflectProb) {
+            // Reflection
+            vec3 reflected = reflect(rayDir, outwardNormal);
+            payload.nextRayDir = reflected;
+            payload.attenuation = attenuation; // Carry any absorption from inside
+        } else {
+            // Refraction
+            payload.nextRayDir = refractedDir;
+            payload.attenuation = attenuation; // Carry any absorption
+        }
+
+        payload.hitColor = vec3(0.0);
+        payload.nextRayOrigin = hitPos + payload.nextRayDir * 0.001;
+        payload.done = 0;
+    }
+        // TYPE 3: LIGHT / EMISSIVE
+
+    payload.seed = seed; // Update payload seed
 }

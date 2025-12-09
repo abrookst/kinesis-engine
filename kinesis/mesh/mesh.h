@@ -30,6 +30,11 @@ namespace Kinesis::Mesh {
         const std::vector<Vertex>& getVertices() const { return m_vertices; }
         const std::vector<uint32_t>& getIndices() const { return m_indices; }
         const std::vector<Material*>& getMaterials() const { return m_materials; } // Access loaded materials
+        std::vector<Material*>& getMaterials() { return m_materials; } // Non-const version for modifications
+
+        // --- Setters for procedurally generated meshes ---
+        void setVertices(const std::vector<Vertex>& vertices) { m_vertices = vertices; }
+        void setIndices(const std::vector<uint32_t>& indices) { m_indices = indices; }
 
         size_t numVertices() const { return m_vertices.size(); }
         size_t numIndices() const { return m_indices.size(); }
@@ -51,6 +56,7 @@ namespace Kinesis::Mesh {
         std::vector<Material*> m_materials; // Owns the materials loaded from the file
 
         bool parseMtl(const std::string& mtlFilePath, const std::string& basePath);
+        void computeNormals(); // Compute normals from geometry when missing
 
     }; // class Mesh
 

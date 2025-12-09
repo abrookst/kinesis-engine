@@ -119,9 +119,10 @@ namespace Kinesis
         submitInfo.pSignalSemaphores = signalSemaphores;
 
         vkResetFences(g_Device, 1, &inFlightFences[currentFrame]);
-        if (vkQueueSubmit(g_Queue, 1, &submitInfo, inFlightFences[currentFrame]) !=
-            VK_SUCCESS)
+        VkResult submitResult = vkQueueSubmit(g_Queue, 1, &submitInfo, inFlightFences[currentFrame]);
+        if (submitResult != VK_SUCCESS)
         {
+            std::cerr << "vkQueueSubmit failed with error: " << submitResult << std::endl; // PRINT ERROR CODE
             throw std::runtime_error("failed to submit draw command buffer!");
         }
 

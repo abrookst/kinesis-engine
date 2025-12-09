@@ -1,56 +1,165 @@
-#version 460 core
+#version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_scalar_block_layout : require
 
-// Minimal Payload
-struct RayPayload {
-    vec3 color;
-};
+// --- Payload Definition (Must match other shaders) ---
+layout(location = 0) rayPayloadEXT HitPayload {
+    vec3 hitColor;      // Emission/Light from the hit
+    vec3 attenuation;   // Throughput color (albedo)
+    vec3 nextRayOrigin; // Origin for next bounce
+    vec3 nextRayDir;    // Direction for next bounce
+    int done;           // 0 = continue, 1 = stop
+    uint seed;          // Random seed
+} payload;
 
-// Input/Output layout qualifiers
-layout(location = 0) rayPayloadEXT RayPayload payload;
+// --- Push Constants ---
+layout(push_constant) uniform PushConstants {
+    int samplesPerPixel;
+    int maxDepth;
+} pushConstants;
 
-// Descriptor Set Bindings (Required)
-layout(set = 0, binding = 0) uniform CameraBufferObject {
+// --- Camera Uniform ---
+layout(set = 0, binding = 0, std140) uniform CameraBufferObject {
     mat4 projection;
     mat4 view;
     mat4 inverseProjection;
     mat4 inverseView;
-} cameraUbo;
+    uint frameNumber;   // For temporal accumulation
+    float time;         // Optional: for motion blur
+} cam;
 
+// --- Ray Tracing Bindings ---
 layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
-layout(set = 1, binding = 1, rgba16f) uniform image2D outputImage; // Match format used in C++
+layout(set = 1, binding = 1, rgba16f) uniform image2D outputImage;
+// Binding 2: Material Buffer (in closest hit shader)
+
+// --- G-Buffer Samplers (for optimization) ---
+// Based on descriptor layout: 3=Pos, 4=Norm, 5=Alb, 6=Prop
+layout(set = 1, binding = 5) uniform sampler2D gbuffer_albedo;
+layout(set = 1, binding = 6) uniform sampler2D gbuffer_properties;
+
+// --- Random Number Generator (Improved) ---
+uint pcg_hash(uint seed) {
+    uint state = seed * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float rnd(inout uint state) {
+    state = pcg_hash(state);
+    return float(state) / float(0xFFFFFFFFu);
+}
+
+vec3 randomInUnitDisk(inout uint seed) {
+    float r = sqrt(rnd(seed));
+    float theta = 2.0 * 3.14159265359 * rnd(seed);
+    return vec3(r * cos(theta), r * sin(theta), 0.0);
+}
 
 void main() {
-    const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
-    const vec2 uv = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
-    const vec2 d = uv * 2.0 - 1.0;
+    uvec2 pixelCoords = gl_LaunchIDEXT.xy;
+    uvec2 size = gl_LaunchSizeEXT.xy;
+    
+    // --- Early Out for Diffuse Materials (Optimization) ---
+    // Check G-Buffer to see if this pixel needs raytracing
+    ivec2 texelCoord = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
+    vec4 albedoSample = texelFetch(gbuffer_albedo, texelCoord, 0);
+    vec4 propertiesSample = texelFetch(gbuffer_properties, texelCoord, 0);
+    
+    // Unpack material type
+    float packedType = propertiesSample.b;
+    int materialType = int(packedType * 2.0 + 0.5); // 0=Diffuse, 1=Metal, 2=Dielectric
+    bool isDielectric = (albedoSample.a < 0.5);
+    bool isMetal = (materialType == 1);
+    
+    // Skip raytracing for pure diffuse materials (floor, walls, etc)
+    if (!isDielectric && !isMetal) {
+        // Write black/zero to output - compositing shader will use raster only
+        ivec2 storeCoords = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
+        imageStore(outputImage, storeCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        return;
+    }
+    
+    // --- Multi-Sample Anti-Aliasing ---
+    vec3 accumulatedColor = vec3(0.0);
+    
+    for (int smp = 0; smp < pushConstants.samplesPerPixel; smp++) {
 
-    vec4 origin = cameraUbo.inverseView * vec4(0, 0, 0, 1);
-    vec4 target = cameraUbo.inverseProjection * vec4(d.x, d.y, 1, 1);
-    vec4 direction = cameraUbo.inverseView * vec4(normalize(target.xyz), 0);
-
-    uint rayFlags = gl_RayFlagsOpaqueEXT;
-    uint cullMask = 0xFF;
-    float tMin = 0.001;
-    float tMax = 10000.0;
-
-    // Initialize payload (simple black)
-    payload.color = vec3(0.0, 0.0, 0.0);
-
-    traceRayEXT(
-        topLevelAS,
-        rayFlags,
-        cullMask,
-        0, // sbtRecordOffset
-        0, // sbtRecordStride
-        1, // missIndex (points to the single miss shader record)
-        origin.xyz,
-        tMin,
-        direction.xyz,
-        tMax,
-        0 // payload location
-    );
-
-    // Write final color from payload to output image
-    imageStore(outputImage, ivec2(gl_LaunchIDEXT.xy), vec4(payload.color, 1.0));
+        uint seed = pcg_hash(pixelCoords.y * size.x + pixelCoords.x +  cam.frameNumber * 7919u + uint(smp) * 104729u);
+        
+        // --- Camera Ray with Jitter (Anti-Aliasing) ---
+        vec2 jitter = vec2(rnd(seed), rnd(seed)) - 0.5;
+        vec2 pixelCenter = vec2(pixelCoords) + 0.5 + jitter;
+        vec2 inUV = pixelCenter / vec2(size);
+        
+        // Convert to clip space (-1 to 1) with correct Y direction
+        vec2 clipCoords = inUV * 2.0 - 1.0;
+        clipCoords.y = -clipCoords.y; // Correct for Vulkan's coordinate system
+        
+        // Create ray from camera
+        vec4 target = cam.inverseProjection * vec4(clipCoords.x, clipCoords.y, 1.0, 1.0);
+        vec3 rayDirection = normalize((cam.inverseView * vec4(normalize(target.xyz), 0.0)).xyz);
+        vec3 rayOrigin = vec3(cam.inverseView[3]); // Camera position
+        
+        vec3 throughput = vec3(1.0);
+        vec3 sampleColor = vec3(0.0);
+        
+        // --- Path Tracing Loop ---
+        for (int depth = 0; depth < pushConstants.maxDepth; depth++) {
+            // Reset payload for this trace
+            payload.done = 1;
+            payload.hitColor = vec3(0.0);
+            payload.attenuation = vec3(0.0);
+            payload.seed = seed;
+            
+            // Trace the ray
+            traceRayEXT(topLevelAS, 
+                       gl_RayFlagsOpaqueEXT, 
+                       0xFF,              // Cull mask
+                       0, 0, 0,           // SBT offsets
+                       rayOrigin, 
+                       0.001,             // tMin
+                       rayDirection, 
+                       1000.0,            // tMax
+                       0                  // Payload location
+            );
+            
+            // Update seed from payload
+            seed = payload.seed;
+            
+            // Accumulate emitted light
+            sampleColor += throughput * payload.hitColor;
+            
+            // Stop if ray terminated or throughput is negligible
+            if (payload.done == 1 || 
+                max(throughput.r, max(throughput.g, throughput.b)) < 0.001) {
+                break;
+            }
+            
+            // Russian Roulette after 8 bounces
+            if (depth > 8) {
+                float p = max(throughput.r, max(throughput.g, throughput.b));
+                if (rnd(seed) > p) {
+                    break;
+                }
+                throughput /= p; // Compensate for survival
+            }
+            
+            // Apply attenuation and continue
+            throughput *= payload.attenuation;
+            
+            // Setup next bounce
+            rayOrigin = payload.nextRayOrigin;
+            rayDirection = payload.nextRayDir;
+        }
+        
+        accumulatedColor += sampleColor;
+    }
+    
+    // Average the samples
+    vec3 finalColor = accumulatedColor / float(pushConstants.samplesPerPixel);
+    
+    // --- Store Results ---
+    ivec2 storeCoords = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
+    imageStore(outputImage, storeCoords, vec4(finalColor, 1.0));
 }

@@ -14,6 +14,9 @@ namespace Kinesis::GUI
     extern bool dark_mode;
     extern bool raytracing_available;
     extern bool enable_raytracing_pass;
+    extern int gbuffer_debug_mode; // 0=Off, 1=Position, 2=Normal, 3=Albedo, 4=Properties
+    extern int samples_per_pixel; // SPP for ray tracing
+    extern int max_ray_depth; // Maximum ray bounces
     extern ImVec4 clear_color;
 
     /**

@@ -12,6 +12,9 @@ namespace Kinesis::GUI
     bool dark_mode = true;
     bool raytracing_available = false;
     bool enable_raytracing_pass = false;
+    int gbuffer_debug_mode = 0; // 0=Off, 1=Position, 2=Normal, 3=Albedo, 4=Properties
+    int samples_per_pixel = 8; // Default SPP
+    int max_ray_depth = 12; // Default max bounces
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
 
     void HelpMarker(const char *desc)
@@ -49,6 +52,17 @@ namespace Kinesis::GUI
                         ImGui::MenuItem("Enable Raytracing Pass", nullptr, &enable_raytracing_pass); // <<< ADD THIS LINE
                         ImGui::EndMenu();
                     }
+                }
+                
+                // G-Buffer Debug Visualization
+                if (ImGui::BeginMenu("G-Buffer Debug"))
+                {
+                    ImGui::RadioButton("Off", &gbuffer_debug_mode, 0);
+                    ImGui::RadioButton("Position", &gbuffer_debug_mode, 1);
+                    ImGui::RadioButton("Normal", &gbuffer_debug_mode, 2);
+                    ImGui::RadioButton("Albedo", &gbuffer_debug_mode, 3);
+                    ImGui::RadioButton("Properties", &gbuffer_debug_mode, 4);
+                    ImGui::EndMenu();
                 }
 
                 // Existing ImGui Options Submenu
@@ -90,10 +104,36 @@ namespace Kinesis::GUI
             ImGui::End();
             return;
         }
-        if (ImGui::CollapsingHeader(""))
+        
+        if (ImGui::CollapsingHeader("Ray Tracing Settings", ImGuiTreeNodeFlags_DefaultOpen))
         {
-            ImGui::Text("");
+            ImGui::Checkbox("Enable Ray Tracing", &enable_raytracing_pass);
+            
+            ImGui::Separator();
+            
+            // Samples Per Pixel slider
+            ImGui::SliderInt("Samples Per Pixel", &samples_per_pixel, 1, 32);
+            HelpMarker("Number of rays traced per pixel. Higher = better quality but slower.");
+            
+            // Max Ray Depth slider
+            ImGui::SliderInt("Max Ray Depth", &max_ray_depth, 1, 20);
+            HelpMarker("Maximum number of ray bounces. Higher = more accurate indirect lighting but slower.");
+            
+            ImGui::Separator();
+            
+            ImGui::Text("Performance: %.1f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         }
+        
+        if (ImGui::CollapsingHeader("G-Buffer Debug"))
+        {
+            ImGui::RadioButton("Off", &gbuffer_debug_mode, 0);
+            ImGui::RadioButton("Position", &gbuffer_debug_mode, 1);
+            ImGui::RadioButton("Normal", &gbuffer_debug_mode, 2);
+            ImGui::RadioButton("Albedo", &gbuffer_debug_mode, 3);
+            ImGui::RadioButton("Properties", &gbuffer_debug_mode, 4);
+        }
+        
+        ImGui::End();
     }
 
     void initialize()
@@ -107,6 +147,9 @@ namespace Kinesis::GUI
         dark_mode = true;
         clear_color = ImVec4(0.45f, 0.55f, 0.60f, 0.0f);
         enable_raytracing_pass = false;
+        gbuffer_debug_mode = 0;
+        samples_per_pixel = 8;
+        max_ray_depth = 12;
     }
 
     void update_imgui()

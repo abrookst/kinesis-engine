@@ -216,6 +216,9 @@ namespace Kinesis::Mesh {
              // If vertices exist but indices don't, it might be a point cloud or line list.
          }
 
+        // Compute normals from geometry if they weren't provided in the OBJ file
+        std::cout << "  Computing normals from geometry..." << std::endl;
+        computeNormals();
 
         std::cout << "  Loaded " << m_vertices.size() << " vertices and " << m_indices.size() << " indices." << std::endl;
         return true;
@@ -411,6 +414,47 @@ namespace Kinesis::Mesh {
         mtlfile.close();
         std::cout << "Finished Parsing Material Library. Added " << m_materials.size() << " materials." << std::endl;
         return true; // Return true even if empty, indicates file was processed
+    }
+
+    // Compute normals from geometry when OBJ file doesn't include them
+    void Mesh::computeNormals() {
+        // First, initialize all normals to zero
+        for (auto& vertex : m_vertices) {
+            vertex.normal = glm::vec3(0.0f);
+        }
+
+        // Compute face normals and accumulate to vertex normals
+        for (size_t i = 0; i < m_indices.size(); i += 3) {
+            uint32_t idx0 = m_indices[i];
+            uint32_t idx1 = m_indices[i + 1];
+            uint32_t idx2 = m_indices[i + 2];
+
+            glm::vec3 v0 = m_vertices[idx0].position;
+            glm::vec3 v1 = m_vertices[idx1].position;
+            glm::vec3 v2 = m_vertices[idx2].position;
+
+            // Compute face normal using cross product
+            glm::vec3 edge1 = v1 - v0;
+            glm::vec3 edge2 = v2 - v0;
+            glm::vec3 faceNormal = glm::cross(edge1, edge2);
+
+            // Accumulate face normal to each vertex of the triangle
+            m_vertices[idx0].normal += faceNormal;
+            m_vertices[idx1].normal += faceNormal;
+            m_vertices[idx2].normal += faceNormal;
+        }
+
+        // Normalize all vertex normals
+        for (auto& vertex : m_vertices) {
+            if (glm::length(vertex.normal) > 0.0f) {
+                vertex.normal = glm::normalize(vertex.normal);
+            } else {
+                // Fallback for degenerate cases
+                vertex.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+            }
+        }
+
+        std::cout << "Computed normals for " << m_vertices.size() << " vertices." << std::endl;
     }
 
 } // namespace Kinesis::Mesh

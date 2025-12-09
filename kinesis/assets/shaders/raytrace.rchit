@@ -116,7 +116,7 @@ void main() {
         
         // Return material properties for next bounce
         payload.hitColor = vec3(0.0);  // No direct emission
-        payload.attenuation = vec3(0.5);  // 0.5 multiplier from reference code
+        payload.attenuation = mat.baseColor.rgb;  // Use actual material albedo color
         payload.nextRayOrigin = hitPos + worldNormal * 0.001;
         payload.nextRayDir = diffuseDir;
         payload.done = 0; // Continue tracing

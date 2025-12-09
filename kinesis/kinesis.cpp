@@ -34,6 +34,7 @@ struct MaterialData
 struct CompositePushConstant
 {
     alignas(4) int isRaytracingActive; // Matches the 'int isRaytracingActive' in GLSL
+    alignas(4) int gbufferDebugMode;   // 0=Off, 1=Position, 2=Normal, 3=Albedo, 4=Properties
 };
 
 #include "window.h"
@@ -584,7 +585,8 @@ namespace Kinesis
 
                         Kinesis::RayTracerManager::allocateAndUpdateRtDescriptorSet(Kinesis::RayTracerManager::tlas.structure, VK_NULL_HANDLE, 0);
                         Kinesis::RayTracerManager::bind(commandBuffer, globalDescriptorSets[frameIndex]);
-                        Kinesis::RayTracerManager::traceRays(commandBuffer, Kinesis::GBuffer::extent.width, Kinesis::GBuffer::extent.height);
+                        Kinesis::RayTracerManager::traceRays(commandBuffer, Kinesis::GBuffer::extent.width, Kinesis::GBuffer::extent.height, 
+                                                                     Kinesis::GUI::samples_per_pixel, Kinesis::GUI::max_ray_depth);
                     }
 
                     // =========================
@@ -657,8 +659,8 @@ namespace Kinesis
                         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, compositePipelineLayout,
                                                 0, 1, &compositeDescriptorSets[frameIndex], 0, nullptr);
 
-                        // <<< ADDED: Push the 'raytracing_active' flag to the shader >>>
-                        CompositePushConstant pushData = {raytracing_active ? 1 : 0};
+                        // <<< ADDED: Push the 'raytracing_active' flag and debug mode to the shader >>>
+                        CompositePushConstant pushData = {raytracing_active ? 1 : 0, Kinesis::GUI::gbuffer_debug_mode};
                         vkCmdPushConstants(
                             commandBuffer,
                             compositePipelineLayout,       // The layout associated with the composite pipeline

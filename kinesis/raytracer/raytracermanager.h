@@ -81,7 +81,7 @@ namespace Kinesis::RayTracerManager {
     void destroyRtOutputImage(); // Add declaration
     void createRtDescriptorSetLayout(); // Add declaration
 
-    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height);
+    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height, int samplesPerPixel, int maxDepth);
 
     inline static const VkTransformMatrixKHR accel_transform = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f};
 }

@@ -49,8 +49,9 @@ void main() {
     outNormalRough = vec4(normalize(fragWorldNormal), material.roughness);
 
     // Attachment 2: Albedo
-    // Store the final base color. Alpha could be used for transparency mask later.
-    outAlbedo = vec4(finalAlbedo, 1.0);
+    // Store the final base color. Alpha = 0.0 for dielectrics (transparent), 1.0 for opaque
+    float alphaValue = (material.materialType == 2) ? 0.0 : 1.0; // Type 2 = DIELECTRIC
+    outAlbedo = vec4(finalAlbedo, alphaValue);
 
     // Attachment 3: Properties
     // Pack material properties. Example packing:

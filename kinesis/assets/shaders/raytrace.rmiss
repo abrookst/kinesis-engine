@@ -1,6 +1,7 @@
 // fileName: kinesis/assets/shaders/raytrace.rmiss
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : require
 
 layout(location = 0) rayPayloadInEXT HitPayload {
     vec3 hitColor;
@@ -14,6 +15,9 @@ layout(location = 0) rayPayloadInEXT HitPayload {
 // Shadow payload
 layout(location = 1) rayPayloadInEXT bool isShadowed;
 
+// Include shared skybox function
+#include "skybox.glsl"
+
 void main() {
     // Check which payload location this is
     if (isShadowed) {
@@ -22,10 +26,7 @@ void main() {
     } else {
         // Regular ray missed - hit sky
         vec3 rayDir = normalize(gl_WorldRayDirectionEXT);
-        float t = 0.5 * (rayDir.y + 1.0);
-        
-        // Gradient Sky (Blue-ish to White)
-        vec3 skyColor = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+        vec3 skyColor = getSkyColor(rayDir);
 
         payload.hitColor = skyColor;
         payload.attenuation = vec3(0.0);

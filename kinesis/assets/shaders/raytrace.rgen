@@ -12,6 +12,12 @@ layout(location = 0) rayPayloadEXT HitPayload {
     uint seed;          // Random seed
 } payload;
 
+// --- Push Constants ---
+layout(push_constant) uniform PushConstants {
+    int samplesPerPixel;
+    int maxDepth;
+} pushConstants;
+
 // --- Camera Uniform ---
 layout(set = 0, binding = 0, std140) uniform CameraBufferObject {
     mat4 projection;
@@ -25,7 +31,12 @@ layout(set = 0, binding = 0, std140) uniform CameraBufferObject {
 // --- Ray Tracing Bindings ---
 layout(set = 1, binding = 0) uniform accelerationStructureEXT topLevelAS;
 layout(set = 1, binding = 1, rgba16f) uniform image2D outputImage;
-layout(set = 1, binding = 2, rgba16f) uniform image2D accumulationImage; // Temporal accumulation
+// Binding 2: Material Buffer (in closest hit shader)
+
+// --- G-Buffer Samplers (for optimization) ---
+// Based on descriptor layout: 3=Pos, 4=Norm, 5=Alb, 6=Prop
+layout(set = 1, binding = 5) uniform sampler2D gbuffer_albedo;
+layout(set = 1, binding = 6) uniform sampler2D gbuffer_properties;
 
 // --- Random Number Generator (Improved) ---
 uint pcg_hash(uint seed) {
@@ -49,11 +60,30 @@ void main() {
     uvec2 pixelCoords = gl_LaunchIDEXT.xy;
     uvec2 size = gl_LaunchSizeEXT.xy;
     
+    // --- Early Out for Diffuse Materials (Optimization) ---
+    // Check G-Buffer to see if this pixel needs raytracing
+    ivec2 texelCoord = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
+    vec4 albedoSample = texelFetch(gbuffer_albedo, texelCoord, 0);
+    vec4 propertiesSample = texelFetch(gbuffer_properties, texelCoord, 0);
+    
+    // Unpack material type
+    float packedType = propertiesSample.b;
+    int materialType = int(packedType * 2.0 + 0.5); // 0=Diffuse, 1=Metal, 2=Dielectric
+    bool isDielectric = (albedoSample.a < 0.5);
+    bool isMetal = (materialType == 1);
+    
+    // Skip raytracing for pure diffuse materials (floor, walls, etc)
+    if (!isDielectric && !isMetal) {
+        // Write black/zero to output - compositing shader will use raster only
+        ivec2 storeCoords = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
+        imageStore(outputImage, storeCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        return;
+    }
+    
     // --- Multi-Sample Anti-Aliasing ---
-    int samplesPerPixel = 8; // Start with 4, increase to 8, 16, 32 for better quality
     vec3 accumulatedColor = vec3(0.0);
     
-    for (int smp = 0; smp < samplesPerPixel; smp++) {
+    for (int smp = 0; smp < pushConstants.samplesPerPixel; smp++) {
 
         uint seed = pcg_hash(pixelCoords.y * size.x + pixelCoords.x +  cam.frameNumber * 7919u + uint(smp) * 104729u);
         
@@ -75,7 +105,7 @@ void main() {
         vec3 sampleColor = vec3(0.0);
         
         // --- Path Tracing Loop ---
-        for (int depth = 0; depth < 5; depth++) {
+        for (int depth = 0; depth < pushConstants.maxDepth; depth++) {
             // Reset payload for this trace
             payload.done = 1;
             payload.hitColor = vec3(0.0);
@@ -106,8 +136,8 @@ void main() {
                 break;
             }
             
-            // Russian Roulette after 5 bounces
-            if (depth > 5) {
+            // Russian Roulette after 8 bounces
+            if (depth > 8) {
                 float p = max(throughput.r, max(throughput.g, throughput.b));
                 if (rnd(seed) > p) {
                     break;
@@ -127,31 +157,9 @@ void main() {
     }
     
     // Average the samples
-    accumulatedColor /= float(samplesPerPixel);
-    
-    // --- Temporal Accumulation (Optional but highly recommended) ---
-    vec3 previousColor = vec3(0.0);
-    if (cam.frameNumber > 0) {
-        ivec2 storeCoords = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
-        previousColor = imageLoad(accumulationImage, storeCoords).rgb;
-    }
-    
-    // Blend with previous frames (exponential moving average)
-    float alpha = 0.1; // Blend factor: lower = more smoothing but slower to update
-    vec3 finalColor;
-    
-    if (cam.frameNumber == 0) {
-        finalColor = accumulatedColor;
-    } else {
-        finalColor = mix(previousColor, accumulatedColor, alpha);
-    }
+    vec3 finalColor = accumulatedColor / float(pushConstants.samplesPerPixel);
     
     // --- Store Results ---
     ivec2 storeCoords = ivec2(pixelCoords.x, int(size.y) - int(pixelCoords.y) - 1);
     imageStore(outputImage, storeCoords, vec4(finalColor, 1.0));
-    
-    // Store for next frame's accumulation
-    if (cam.frameNumber > 0) {
-        imageStore(accumulationImage, storeCoords, vec4(finalColor, 1.0));
-    }
 }

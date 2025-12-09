@@ -56,6 +56,7 @@ namespace Kinesis::Mesh {
         std::vector<Material*> m_materials; // Owns the materials loaded from the file
 
         bool parseMtl(const std::string& mtlFilePath, const std::string& basePath);
+        void computeNormals(); // Compute normals from geometry when missing
 
     }; // class Mesh
 

@@ -370,12 +370,18 @@ namespace Kinesis::RayTracerManager
         assert(Kinesis::globalSetLayout != VK_NULL_HANDLE && "Global set layout must exist");
         std::vector<VkDescriptorSetLayout> setLayouts = {Kinesis::globalSetLayout, rtDescriptorSetLayout};
 
+        // Push constant range for ray tracing parameters
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(int) * 2; // samplesPerPixel and maxDepth
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size()); // Now using two sets
         pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-        pipelineLayoutInfo.pushConstantRangeCount = 0; // No push constants for RT pipeline in this example
-        pipelineLayoutInfo.pPushConstantRanges = nullptr;
+        pipelineLayoutInfo.pushConstantRangeCount = 1;
+        pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
         if (vkCreatePipelineLayout(g_Device, &pipelineLayoutInfo, nullptr, &rtPipelineLayout) != VK_SUCCESS)
         {
@@ -993,7 +999,7 @@ for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i) {
     }
 
     // --- traceRays ---
-    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height)
+    void traceRays(VkCommandBuffer commandBuffer, uint32_t width, uint32_t height, int samplesPerPixel, int maxDepth)
     {
         // Check if the required function pointer is loaded (with pfn prefix)
         if (!pfnCmdTraceRaysKHR)
@@ -1004,6 +1010,16 @@ for (size_t i = 0; i < Kinesis::gameObjects.size(); ++i) {
         assert(rgenSBT.buffer != VK_NULL_HANDLE);
         assert(missSBT.buffer != VK_NULL_HANDLE);
         assert(chitSBT.buffer != VK_NULL_HANDLE);
+
+        // Push constants for ray tracing parameters
+        struct RayTracingPushConstants {
+            int samplesPerPixel;
+            int maxDepth;
+        } pushConstants;
+        pushConstants.samplesPerPixel = samplesPerPixel;
+        pushConstants.maxDepth = maxDepth;
+
+        vkCmdPushConstants(commandBuffer, rtPipelineLayout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(RayTracingPushConstants), &pushConstants);
 
         // Call function via loaded pointer (with pfn prefix)
         pfnCmdTraceRaysKHR(
